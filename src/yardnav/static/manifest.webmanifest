@@ -1,0 +1,24 @@
+{
+  "name": "YardNav Kyiv",
+  "short_name": "YardNav",
+  "description": "Дворовый велосипедный навигатор по Киеву",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ea",
+  "theme_color": "#17211b",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

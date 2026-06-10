@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="YardNav demo">
+  <bounds minlat="50.4488" minlon="30.5088" maxlat="50.4522" maxlon="30.5145"/>
+  <node id="1" lat="50.4492" lon="30.5092"/>
+  <node id="2" lat="50.4492" lon="30.5105"/>
+  <node id="3" lat="50.4492" lon="30.5118"/>
+  <node id="4" lat="50.4492" lon="30.5131"/>
+  <node id="5" lat="50.4502" lon="30.5092"/>
+  <node id="6" lat="50.4502" lon="30.5105"/>
+  <node id="7" lat="50.4502" lon="30.5118"/>
+  <node id="8" lat="50.4502" lon="30.5131"/>
+  <node id="9" lat="50.4512" lon="30.5092"/>
+  <node id="10" lat="50.4512" lon="30.5105"/>
+  <node id="11" lat="50.4512" lon="30.5118"/>
+  <node id="12" lat="50.4512" lon="30.5131"/>
+  <node id="13" lat="50.4520" lon="30.5105"/>
+  <node id="14" lat="50.4520" lon="30.5118"/>
+
+  <way id="101">
+    <nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/>
+    <tag k="highway" v="primary"/>
+    <tag k="name" v="Демонстрационная магистраль"/>
+  </way>
+  <way id="102">
+    <nd ref="1"/><nd ref="5"/><nd ref="9"/>
+    <tag k="highway" v="residential"/>
+  </way>
+  <way id="103">
+    <nd ref="4"/><nd ref="8"/><nd ref="12"/>
+    <tag k="highway" v="residential"/>
+  </way>
+  <way id="104">
+    <nd ref="9"/><nd ref="10"/><nd ref="11"/><nd ref="12"/>
+    <tag k="highway" v="living_street"/>
+  </way>
+  <way id="105">
+    <nd ref="5"/><nd ref="6"/><nd ref="7"/><nd ref="8"/>
+    <tag k="highway" v="service"/>
+    <tag k="service" v="driveway"/>
+    <tag k="yard" v="yes"/>
+  </way>
+  <way id="106">
+    <nd ref="2"/><nd ref="6"/><nd ref="10"/><nd ref="13"/>
+    <tag k="highway" v="path"/>
+    <tag k="surface" v="ground"/>
+  </way>
+  <way id="107">
+    <nd ref="3"/><nd ref="7"/><nd ref="11"/><nd ref="14"/>
+    <tag k="highway" v="footway"/>
+  </way>
+  <way id="108">
+    <nd ref="13"/><nd ref="14"/>
+    <tag k="highway" v="track"/>
+    <tag k="surface" v="dirt"/>
+  </way>
+</osm>

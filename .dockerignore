@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+tests
+data/demo.osm
+data/desnianskyi.osm
+data/kyiv-center.osm

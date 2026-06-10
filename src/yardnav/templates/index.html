@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17211b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="YardNav">
+  <title>YardNav Kyiv</title>
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v='1') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg', v='1') }}" type="image/svg+xml">
+  <link rel="preconnect" href="https://tile.openstreetmap.org">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='nav1') }}">
+</head>
+<body>
+  <main>
+    <div id="map" aria-label="Карта маршрута"></div>
+    <button id="quick-locate" class="map-action" type="button" aria-label="Показать моё местоположение">
+      <span aria-hidden="true">◎</span>
+    </button>
+
+    <section class="panel" id="panel">
+      <button id="panel-toggle" class="panel-toggle" type="button" aria-expanded="true">
+        <span class="handle"></span>
+        <span id="panel-toggle-label">Свернуть</span>
+      </button>
+
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Дворовый навигатор</p>
+          <h1>YardNav Kyiv</h1>
+        </div>
+        <span class="coverage">Киев</span>
+      </div>
+
+      <p class="intro">Выберите начало и конец на карте.</p>
+
+      <div class="route-controls">
+        <label class="mode">
+          Режим
+          <select id="profile">
+            <option value="mtb" selected>Горный велосипед 10+ км/ч</option>
+            <option value="experimental">Экспериментальный по тропам</option>
+            <option value="custom_experimental">Кастомный через мои точки</option>
+            <option value="walk">Пешком через дворы</option>
+          </select>
+        </label>
+
+        <div class="steps">
+          <div><span>1</span><strong id="start-label">Укажите начало</strong></div>
+          <div><span>2</span><strong id="goal-label">Укажите конец</strong></div>
+        </div>
+
+        <div class="location-actions">
+          <button id="locate" type="button">Моё местоположение</button>
+          <button id="track" class="secondary" type="button">Отслеживать</button>
+          <button id="wake-lock" class="secondary wide" type="button">Не выключать экран</button>
+        </div>
+
+        <div id="custom-controls" class="custom-controls" hidden>
+          <p><strong id="custom-count">0 точек</strong> · кликайте по карте по порядку движения</p>
+          <div>
+            <button id="undo-point" class="secondary" type="button">Удалить последнюю</button>
+            <button id="build-custom" type="button">Построить</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="location-summary" class="location-summary" hidden>
+        <strong id="location-state">Позиция не определена</strong>
+        <span id="route-progress"></span>
+      </div>
+
+      <div id="summary" class="summary" hidden></div>
+
+      <div class="panel-footer">
+        <p id="status" class="status">Первый клик задает начало.</p>
+        <button id="reset" class="reset-button" type="button">Сбросить</button>
+      </div>
+
+      <details class="notes">
+        <summary>О данных и геолокации</summary>
+        <p>Геолокация обрабатывается только в браузере. На iPhone она требует HTTPS и разрешение пользователя.</p>
+        <p>Данные дворов, бордюров и лестниц зависят от полноты OpenStreetMap.</p>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    window.YARDNAV_CONFIG = {
+      center: [{{ center_lat }}, {{ center_lon }}],
+      bounds: {{ bounds | tojson }}
+    };
+  </script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="{{ url_for('static', filename='app.js', v='nav1') }}"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[project]
+name = "yardnav-kyiv"
+version = "0.1.0"
+description = "Pedestrian routing through yards and informal paths in Kyiv"
+requires-python = ">=3.11"
+dependencies = [
+    "Flask>=3.1,<4",
+    "gunicorn>=23,<24",
+]
+
+[project.scripts]
+yardnav = "yardnav.app:main"
+
+[tool.pyright]
+include = ["src"]
