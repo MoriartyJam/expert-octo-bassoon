@@ -94,5 +94,15 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class ProductionStartupTests(unittest.TestCase):
+    def test_default_app_starts_without_loading_all_kyiv_tiles(self) -> None:
+        app = create_app()
+        response = app.test_client().get("/api/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["nodes"], 0)
+        self.assertEqual(response.json["loaded_tiles"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

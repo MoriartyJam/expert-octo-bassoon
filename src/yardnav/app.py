@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
@@ -20,6 +21,39 @@ from .profile import (
 PACKAGE_DIR = Path(__file__).parent
 DEFAULT_OSM_PATH = PACKAGE_DIR.parents[1] / "data" / "kyiv"
 KYIV_BOUNDS = (50.2132422, 30.2361453, 50.5908142, 30.8263593)
+KYIV_LAT_BREAKS = (50.34, 50.455)
+KYIV_LON_BREAKS = (30.43, 30.625)
+
+
+def _tile_index(value: float, breaks: tuple[float, float]) -> int:
+    if value < breaks[0]:
+        return 0
+    if value < breaks[1]:
+        return 1
+    return 2
+
+
+def _route_tiles(points: list[tuple[float, float]]) -> tuple[str, ...]:
+    cells: set[tuple[int, int]] = set()
+    for start, goal in zip(points, points[1:]):
+        start_row = _tile_index(start[0], KYIV_LAT_BREAKS)
+        start_col = _tile_index(start[1], KYIV_LON_BREAKS)
+        goal_row = _tile_index(goal[0], KYIV_LAT_BREAKS)
+        goal_col = _tile_index(goal[1], KYIV_LON_BREAKS)
+        steps = max(abs(goal_row - start_row), abs(goal_col - start_col), 1)
+        for step in range(steps + 1):
+            fraction = step / steps
+            row = round(start_row + (goal_row - start_row) * fraction)
+            col = round(start_col + (goal_col - start_col) * fraction)
+            cells.add((row, col))
+    if not cells and points:
+        cells.add(
+            (
+                _tile_index(points[0][0], KYIV_LAT_BREAKS),
+                _tile_index(points[0][1], KYIV_LON_BREAKS),
+            )
+        )
+    return tuple(f"{row}{col}.osm" for row, col in sorted(cells))
 
 
 def _number(payload: dict[str, Any], name: str) -> float:
@@ -151,14 +185,40 @@ def create_app(
         static_folder=str(PACKAGE_DIR / "static"),
     )
     source = Path(osm_path or os.environ.get("YARDNAV_OSM_PATH", DEFAULT_OSM_PATH))
-    source_bounds = KYIV_BOUNDS if source.resolve() == DEFAULT_OSM_PATH.resolve() else None
-    routing_network = network or load_osm_xml(source, bounds=source_bounds)
+    lazy_kyiv = network is None and source.resolve() == DEFAULT_OSM_PATH.resolve()
+    routing_network = network
+    loaded_tiles: tuple[str, ...] = ()
+    network_lock = Lock()
+
+    def get_network(points: list[tuple[float, float]]) -> RoutingNetwork:
+        nonlocal routing_network, loaded_tiles
+        if not lazy_kyiv:
+            if routing_network is None:
+                routing_network = load_osm_xml(source)
+            return routing_network
+
+        requested_tiles = _route_tiles(points)
+        with network_lock:
+            if routing_network is None or requested_tiles != loaded_tiles:
+                files = [
+                    source / tile
+                    for tile in requested_tiles
+                    if (source / tile).is_file()
+                ]
+                routing_network = load_osm_xml(files, bounds=KYIV_BOUNDS)
+                loaded_tiles = requested_tiles
+                app.config["ROUTING_NETWORK"] = routing_network
+        return routing_network
+
     app.config["ROUTING_NETWORK"] = routing_network
     app.config["OSM_PATH"] = str(source)
 
     @app.get("/")
     def index() -> str:
-        south, west, north, east = routing_network.bounds
+        if lazy_kyiv:
+            south, west, north, east = KYIV_BOUNDS
+        else:
+            south, west, north, east = get_network([]).bounds
         return render_template(
             "index.html",
             center_lat=(south + north) / 2,
@@ -168,13 +228,19 @@ def create_app(
 
     @app.get("/api/health")
     def health():
-        edge_count = sum(len(edges) for edges in routing_network.graph.values())
+        current_network = routing_network
+        edge_count = (
+            sum(len(edges) for edges in current_network.graph.values())
+            if current_network
+            else 0
+        )
         return jsonify(
             {
                 "status": "ok",
-                "nodes": len(routing_network.nodes),
+                "nodes": len(current_network.nodes) if current_network else 0,
                 "directed_edges": edge_count,
                 "source": app.config["OSM_PATH"],
+                "loaded_tiles": list(loaded_tiles),
             }
         )
 
@@ -203,7 +269,10 @@ def create_app(
                 {"error": "profile must be walk, mtb or experimental"}
             ), 400
         profile = profiles[mode]
-        result = routing_network.route_coordinates(
+        active_network = get_network(
+            [(start_lat, start_lon), (goal_lat, goal_lon)]
+        )
+        result = active_network.route_coordinates(
             start_lat,
             start_lon,
             goal_lat,
@@ -239,11 +308,12 @@ def create_app(
             return jsonify({"error": str(exc)}), 400
 
         results: list[RoutedPath] = []
+        active_network = get_network(parsed_points)
         for index, (start, goal) in enumerate(
             zip(parsed_points, parsed_points[1:]),
             start=1,
         ):
-            result = routing_network.route_coordinates(
+            result = active_network.route_coordinates(
                 start[0],
                 start[1],
                 goal[0],

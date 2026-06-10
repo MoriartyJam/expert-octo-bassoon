@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from math import cos, floor, hypot, isfinite, radians
 from pathlib import Path
@@ -118,7 +119,12 @@ def _nearby_road_segments(
     ]
 
 
-def _osm_files(path: Path) -> tuple[Path, ...]:
+def _osm_files(path: Path | Iterable[Path]) -> tuple[Path, ...]:
+    if not isinstance(path, Path):
+        files = tuple(path)
+        if not files:
+            raise ValueError("at least one .osm file is required")
+        return files
     if path.is_dir():
         files = tuple(sorted(path.glob("*.osm")))
         if not files:
@@ -128,7 +134,7 @@ def _osm_files(path: Path) -> tuple[Path, ...]:
 
 
 def load_osm_xml(
-    path: str | Path,
+    path: str | Path | Iterable[Path],
     bounds: tuple[float, float, float, float] | None = None,
 ) -> RoutingNetwork:
     """Load a pedestrian and bicycle graph from OSM XML files.
@@ -136,7 +142,8 @@ def load_osm_xml(
     The path may point to one XML file or to a directory of tiled XML extracts.
     Ways repeated across tile boundaries are deduplicated by their OSM ID.
     """
-    files = _osm_files(Path(path))
+    source = Path(path) if isinstance(path, (str, Path)) else path
+    files = _osm_files(source)
     all_nodes: dict[int, Node] = {}
     node_tags: dict[int, dict[str, str]] = {}
     way_elements: dict[int, ElementTree.Element] = {}
