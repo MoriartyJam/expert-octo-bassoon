@@ -366,6 +366,49 @@ button:disabled {
   stroke-linejoin: round;
 }
 
+.location-heading-marker {
+  display: grid;
+  border: 0;
+  background: transparent;
+  place-items: center;
+}
+
+.location-heading-marker::before {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 3px solid white;
+  border-radius: 50%;
+  background: rgb(23 105 170 / 18%);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 30%);
+  content: "";
+}
+
+.location-arrow {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 26px;
+  height: 32px;
+  clip-path: polygon(
+    50% 0,
+    100% 68%,
+    64% 58%,
+    64% 100%,
+    36% 100%,
+    36% 58%,
+    0 68%
+  );
+  background: #1769aa;
+  filter:
+    drop-shadow(1px 0 0 white)
+    drop-shadow(-1px 0 0 white)
+    drop-shadow(0 1px 0 white)
+    drop-shadow(0 -1px 0 white);
+  transform-origin: 50% 50%;
+  transition: transform .2s linear;
+}
+
 @media (max-width: 720px) {
   #map {
     inset: 0;

@@ -21,6 +21,10 @@ const state = {
   filteredLocation: null,
   locationAccuracy: null,
   locationTimestamp: null,
+  heading: 0,
+  compassHeading: null,
+  compassTimestamp: null,
+  compassActive: false,
   routeAlong: null,
   followLocation: false,
   customPoints: [],
@@ -139,6 +143,81 @@ function bearing(start, end) {
   const x = Math.cos(startLat) * Math.sin(endLat) -
     Math.sin(startLat) * Math.cos(endLat) * Math.cos(deltaLon);
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function setLocationHeading(heading) {
+  if (!Number.isFinite(heading)) return;
+  state.heading = (heading + 360) % 360;
+  const arrow = state.locationMarker?.getElement()
+    ?.querySelector(".location-arrow");
+  if (arrow) {
+    arrow.style.transform = `rotate(${state.heading}deg)`;
+  }
+}
+
+function deviceHeading(event) {
+  if (Number.isFinite(event.webkitCompassHeading)) {
+    return event.webkitCompassHeading;
+  }
+  if (event.absolute && Number.isFinite(event.alpha)) {
+    const screenAngle = screen.orientation?.angle || window.orientation || 0;
+    return 360 - event.alpha + screenAngle;
+  }
+  return null;
+}
+
+function handleDeviceOrientation(event) {
+  const heading = deviceHeading(event);
+  if (!Number.isFinite(heading)) return;
+  state.compassHeading = heading;
+  state.compassTimestamp = Date.now();
+  setLocationHeading(heading);
+}
+
+async function enableCompass() {
+  if (state.compassActive || typeof DeviceOrientationEvent === "undefined") {
+    return;
+  }
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== "granted") return;
+    }
+    window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+    window.addEventListener(
+      "deviceorientationabsolute",
+      handleDeviceOrientation,
+      true
+    );
+    state.compassActive = true;
+  } catch (error) {
+    state.compassActive = false;
+  }
+}
+
+function headingForPosition(position, previousLocation, fix, routeMatch) {
+  if (
+    Number.isFinite(state.compassHeading)
+    && Date.now() - state.compassTimestamp < 5000
+  ) {
+    return state.compassHeading;
+  }
+  if (Number.isFinite(position.coords.heading)) {
+    return position.coords.heading;
+  }
+  if (
+    previousLocation
+    && map.distance(previousLocation, fix.latlng) >= 4
+  ) {
+    return bearing(previousLocation, fix.latlng);
+  }
+  if (routeMatch && state.routeLatLngs[routeMatch.segmentIndex + 1]) {
+    return bearing(
+      routeMatch.latlng,
+      state.routeLatLngs[routeMatch.segmentIndex + 1]
+    );
+  }
+  return state.heading;
 }
 
 function routePointAt(distance) {
@@ -440,6 +519,7 @@ function updateProgress(latlng) {
 }
 
 function updateLocation(position, centerMap = false) {
+  const previousLocation = state.filteredLocation;
   const fix = filteredPosition(position);
   state.filteredLocation = fix.latlng;
   state.locationAccuracy = fix.accuracy;
@@ -455,14 +535,22 @@ function updateLocation(position, centerMap = false) {
     : fix.latlng;
   state.currentLocation = fix.latlng;
   const accuracy = Math.round(fix.accuracy);
+  const heading = headingForPosition(
+    position,
+    previousLocation,
+    fix,
+    routeMatch
+  );
 
   if (!state.locationMarker) {
-    state.locationMarker = L.circleMarker(displayLatLng, {
-      radius: 8,
-      color: "#fff",
-      weight: 3,
-      fillColor: "#1769aa",
-      fillOpacity: 1
+    state.locationMarker = L.marker(displayLatLng, {
+      zIndexOffset: 1000,
+      icon: L.divIcon({
+        className: "location-heading-marker",
+        html: '<span class="location-arrow" aria-hidden="true"></span>',
+        iconSize: [42, 42],
+        iconAnchor: [21, 21]
+      })
     }).addTo(map).bindTooltip("Вы здесь");
     state.accuracyCircle = L.circle(fix.latlng, {
       radius: fix.accuracy,
@@ -475,6 +563,7 @@ function updateLocation(position, centerMap = false) {
     state.locationMarker.setLatLng(displayLatLng);
     state.accuracyCircle.setLatLng(fix.latlng).setRadius(fix.accuracy);
   }
+  setLocationHeading(heading);
 
   locationSummary.hidden = false;
   const snapLabel = routeMatch && routeMatch.offRoute <= snapDistance
@@ -711,8 +800,9 @@ map.on("click", event => {
 });
 
 document.querySelector("#reset").addEventListener("click", reset);
-locateButton.addEventListener("click", () => {
+locateButton.addEventListener("click", async () => {
   if (!requireGeolocation()) return;
+  await enableCompass();
   status.textContent = "Определяю местоположение...";
   navigator.geolocation.getCurrentPosition(
     position => {
@@ -733,7 +823,7 @@ quickLocateButton.addEventListener("click", () => locateButton.click());
 panelToggle.addEventListener("click", () => {
   setPanelCollapsed(!panel.classList.contains("collapsed"));
 });
-trackButton.addEventListener("click", () => {
+trackButton.addEventListener("click", async () => {
   if (state.watchId !== null) {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
@@ -745,6 +835,7 @@ trackButton.addEventListener("click", () => {
     return;
   }
   if (!requireGeolocation()) return;
+  await enableCompass();
   state.followLocation = true;
   trackButton.classList.add("active");
   trackButton.textContent = "Остановить отслеживание";
