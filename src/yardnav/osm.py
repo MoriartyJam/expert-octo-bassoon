@@ -30,16 +30,45 @@ GRID_SIZE_M = 50.0
 ROADSIDE_DISTANCE_M = 28.0
 INTERIOR_DISTANCE_M = 32.0
 PARALLEL_COSINE = 0.78
+ROUTING_TAGS = {
+    "access",
+    "barrier",
+    "bicycle",
+    "crossing",
+    "crossing:road",
+    "crossing:signals",
+    "foot",
+    "foot:oneway",
+    "footway",
+    "highway",
+    "kerb",
+    "lit",
+    "oneway:foot",
+    "ramp:bicycle",
+    "service",
+    "smoothness",
+    "surface",
+    "tracktype",
+    "yard",
+}
+NODE_ROUTING_TAGS = {
+    "barrier",
+    "bicycle",
+    "crossing",
+    "crossing:signals",
+    "highway",
+    "kerb",
+}
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _Way:
     id: int
     refs: tuple[int, ...]
     tags: dict[str, str]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _Segment:
     ax: float
     ay: float
@@ -51,11 +80,15 @@ class _Segment:
         return (self.ax + self.bx) / 2, (self.ay + self.by) / 2
 
 
-def _tags(element: ElementTree.Element) -> dict[str, str]:
+def _tags(
+    element: ElementTree.Element,
+    allowed: set[str] | None = None,
+) -> dict[str, str]:
     return {
         tag.attrib["k"]: tag.attrib["v"]
         for tag in element.findall("tag")
         if "k" in tag.attrib and "v" in tag.attrib
+        and (allowed is None or tag.attrib["k"] in allowed)
     }
 
 
@@ -146,36 +179,38 @@ def load_osm_xml(
     files = _osm_files(source)
     all_nodes: dict[int, Node] = {}
     node_tags: dict[int, dict[str, str]] = {}
-    way_elements: dict[int, ElementTree.Element] = {}
     for file in files:
-        root = ElementTree.parse(file).getroot()
-        for element in root.findall("node"):
-            node_id = int(element.attrib["id"])
-            all_nodes[node_id] = Node(
-                id=node_id,
-                lat=float(element.attrib["lat"]),
-                lon=float(element.attrib["lon"]),
-            )
-            tags = _tags(element)
-            if tags:
-                node_tags[node_id] = tags
-        for way in root.findall("way"):
-            way_elements[int(way.attrib["id"])] = way
+        for _, element in ElementTree.iterparse(file, events=("end",)):
+            if element.tag == "node":
+                node_id = int(element.attrib["id"])
+                all_nodes[node_id] = Node(
+                    id=node_id,
+                    lat=float(element.attrib["lat"]),
+                    lon=float(element.attrib["lon"]),
+                )
+                tags = _tags(element, NODE_ROUTING_TAGS)
+                if tags:
+                    node_tags[node_id] = tags
+            if element.tag in {"node", "way"}:
+                element.clear()
 
-    ways: list[_Way] = []
-    for way_id, way in way_elements.items():
-        tags = _tags(way)
-        if not is_walkable(tags) and not is_bikeable(tags):
-            continue
-
-        refs = tuple(
-            int(nd.attrib["ref"])
-            for nd in way.findall("nd")
-            if int(nd.attrib["ref"]) in all_nodes
-        )
-        if len(refs) < 2:
-            continue
-        ways.append(_Way(way_id, refs, tags))
+    ways_by_id: dict[int, _Way] = {}
+    for file in files:
+        for _, element in ElementTree.iterparse(file, events=("end",)):
+            if element.tag == "way":
+                tags = _tags(element, ROUTING_TAGS)
+                if is_walkable(tags) or is_bikeable(tags):
+                    refs = tuple(
+                        int(nd.attrib["ref"])
+                        for nd in element.findall("nd")
+                        if int(nd.attrib["ref"]) in all_nodes
+                    )
+                    if len(refs) >= 2:
+                        way_id = int(element.attrib["id"])
+                        ways_by_id[way_id] = _Way(way_id, refs, tags)
+            if element.tag in {"node", "way"}:
+                element.clear()
+    ways = list(ways_by_id.values())
 
     reference_lat = (
         sum(node.lat for node in all_nodes.values()) / len(all_nodes)
@@ -195,6 +230,7 @@ def load_osm_xml(
 
     graph: dict[int, list[Edge]] = defaultdict(list)
     used_nodes: set[int] = set()
+    tag_cache: dict[tuple[tuple[str, str], ...], dict[str, str]] = {}
 
     for way in ways:
         refs = way.refs
@@ -285,10 +321,12 @@ def load_osm_xml(
             ):
                 edge_tags["yardnav:interior"] = "yes"
 
+            tag_key = tuple(sorted(edge_tags.items()))
+            shared_tags = tag_cache.setdefault(tag_key, edge_tags)
             if forward:
-                graph[source_id].append(Edge(target_id, length_m, edge_tags))
+                graph[source_id].append(Edge(target_id, length_m, shared_tags))
             if backward:
-                graph[target_id].append(Edge(source_id, length_m, edge_tags))
+                graph[target_id].append(Edge(source_id, length_m, shared_tags))
             used_nodes.update((source_id, target_id))
 
     nodes = {node_id: all_nodes[node_id] for node_id in used_nodes}

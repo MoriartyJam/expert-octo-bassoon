@@ -7,7 +7,7 @@ from .profile import CostProfile
 from .routing import Edge, Graph, Node, Route, find_route, straight_line_m
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RoutedPath:
     route: Route
     coordinates: tuple[tuple[float, float], ...]
@@ -15,7 +15,7 @@ class RoutedPath:
     goal_node: Node
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RoutingNetwork:
     nodes: Mapping[int, Node]
     graph: Graph
@@ -55,4 +55,3 @@ class RoutingNetwork:
         lats = [node.lat for node in self.nodes.values()]
         lons = [node.lon for node in self.nodes.values()]
         return min(lats), min(lons), max(lats), max(lons)
-

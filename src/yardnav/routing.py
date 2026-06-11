@@ -8,21 +8,21 @@ from typing import Mapping, Sequence
 from .profile import CostProfile, Tags, edge_cost
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Node:
     id: int
     lat: float
     lon: float
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Edge:
     target: int
     length_m: float
     tags: Tags
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Route:
     node_ids: tuple[int, ...]
     distance_m: float

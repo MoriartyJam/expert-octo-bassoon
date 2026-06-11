@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import os
 from pathlib import Path
 from threading import Lock
@@ -200,6 +201,10 @@ def create_app(
         requested_tiles = _route_tiles(points)
         with network_lock:
             if routing_network is None or requested_tiles != loaded_tiles:
+                routing_network = None
+                loaded_tiles = ()
+                app.config["ROUTING_NETWORK"] = None
+                gc.collect()
                 files = [
                     source / tile
                     for tile in requested_tiles
@@ -348,6 +353,7 @@ def main() -> None:
         port=args.port,
         debug=False,
         use_reloader=False,
+        threaded=False,
     )
 
 

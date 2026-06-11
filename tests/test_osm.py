@@ -149,6 +149,25 @@ class OsmImportTests(unittest.TestCase):
         self.assertEqual(len(network.graph[1]), 1)
         self.assertEqual(len(network.graph[2]), 1)
 
+    def test_reuses_tags_for_opposite_edges(self) -> None:
+        xml = """<?xml version="1.0"?>
+        <osm version="0.6">
+          <node id="1" lat="50.0" lon="30.0"/>
+          <node id="2" lat="50.0" lon="30.001"/>
+          <way id="10">
+            <nd ref="1"/><nd ref="2"/>
+            <tag k="highway" v="path"/>
+            <tag k="surface" v="ground"/>
+          </way>
+        </osm>
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "map.osm"
+            path.write_text(xml, encoding="utf-8")
+            network = load_osm_xml(path)
+
+        self.assertIs(network.graph[1][0].tags, network.graph[2][0].tags)
+
 
 if __name__ == "__main__":
     unittest.main()
