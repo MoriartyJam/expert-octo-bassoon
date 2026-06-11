@@ -47,6 +47,7 @@ class AppTests(unittest.TestCase):
             "maneuver-icon",
             "maneuver-instruction",
             "following-maneuver",
+            "route-direction-hint",
         ):
             self.assertIn(f'id="{element_id}"', html)
         self.assertIn("manifest.webmanifest", html)

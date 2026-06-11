@@ -11,6 +11,8 @@ const state = {
   markers: [],
   route: null,
   routeAhead: null,
+  routePassed: null,
+  routeDirectionMarkers: [],
   recoveryRoute: null,
   recoveryRequest: null,
   recoveryTarget: null,
@@ -258,6 +260,23 @@ function routePointAt(distance) {
   );
 }
 
+function routePointsBetween(startDistance, endDistance) {
+  if (state.routeLatLngs.length < 2) return [];
+  const start = Math.max(0, startDistance);
+  const end = Math.max(start, endDistance);
+  const points = [routePointAt(start)];
+  for (let index = 1; index < state.routeLatLngs.length - 1; index += 1) {
+    if (
+      state.routeDistances[index] > start
+      && state.routeDistances[index] < end
+    ) {
+      points.push(state.routeLatLngs[index]);
+    }
+  }
+  points.push(routePointAt(end));
+  return points.filter(Boolean);
+}
+
 function maneuverForAngle(angle) {
   const magnitude = Math.abs(angle);
   const right = angle > 0;
@@ -358,6 +377,19 @@ function clearRecoveryRoute() {
   state.recoveryRequest = null;
   state.recoveryTarget = null;
   state.offRouteActive = false;
+}
+
+function clearDirectionMarkers() {
+  state.routeDirectionMarkers.forEach(marker => marker.remove());
+  state.routeDirectionMarkers = [];
+}
+
+function clearRouteGuidance() {
+  if (state.routeAhead) state.routeAhead.remove();
+  if (state.routePassed) state.routePassed.remove();
+  clearDirectionMarkers();
+  state.routeAhead = null;
+  state.routePassed = null;
 }
 
 function recoveryProfile() {
@@ -474,21 +506,12 @@ function followRouteAhead(displayLatLng) {
 
 function updateRouteAhead(position) {
   if (!position || state.routeLatLngs.length < 2) return;
+  const total = state.routeDistances[state.routeDistances.length - 1];
   const endDistance = Math.min(
-    state.routeDistances[state.routeDistances.length - 1],
+    total,
     position.along + 350
   );
-  const points = [position.latlng];
-  for (
-    let index = position.segmentIndex + 1;
-    index < state.routeLatLngs.length
-      && state.routeDistances[index] < endDistance;
-    index += 1
-  ) {
-    points.push(state.routeLatLngs[index]);
-  }
-  const end = routePointAt(endDistance);
-  if (end) points.push(end);
+  const points = routePointsBetween(position.along, endDistance);
 
   if (!state.routeAhead) {
     state.routeAhead = L.polyline(points, {
@@ -500,7 +523,47 @@ function updateRouteAhead(position) {
   } else {
     state.routeAhead.setLatLngs(points);
   }
+
+  const passedPoints = routePointsBetween(0, position.along);
+  if (position.along >= 10 && passedPoints.length >= 2) {
+    if (!state.routePassed) {
+      state.routePassed = L.polyline(passedPoints, {
+        color: "#737d77",
+        weight: 7,
+        opacity: .55,
+        interactive: false
+      }).addTo(map);
+    } else {
+      state.routePassed.setLatLngs(passedPoints);
+    }
+  }
+
+  clearDirectionMarkers();
+  for (
+    let distance = position.along + 45;
+    distance < endDistance;
+    distance += 75
+  ) {
+    const arrowPosition = routePointAt(distance);
+    const arrowTarget = routePointAt(Math.min(distance + 18, total));
+    if (!arrowPosition || !arrowTarget) continue;
+    const direction = bearing(arrowPosition, arrowTarget);
+    const marker = L.marker(arrowPosition, {
+      interactive: false,
+      zIndexOffset: 700,
+      icon: L.divIcon({
+        className: "route-direction-marker",
+        html: `<span style="transform: rotate(${direction}deg)"></span>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      })
+    }).addTo(map);
+    state.routeDirectionMarkers.push(marker);
+  }
+
+  if (state.routePassed) state.routePassed.bringToFront();
   state.routeAhead.bringToFront();
+  state.routeDirectionMarkers.forEach(marker => marker.setZIndexOffset(800));
   if (state.locationMarker) state.locationMarker.bringToFront();
 }
 
@@ -785,10 +848,9 @@ function addCustomPoint(latlng) {
   state.customMarkers.push(marker);
   if (state.route) {
     state.route.remove();
-    if (state.routeAhead) state.routeAhead.remove();
+    clearRouteGuidance();
     clearRecoveryRoute();
     state.route = null;
-    state.routeAhead = null;
     state.routeLatLngs = [];
     state.routeDistances = [];
     hideNavigation();
@@ -831,10 +893,9 @@ async function requestRoute() {
     if (!response.ok) throw new Error(data.error || "Не удалось построить маршрут");
 
     if (state.route) state.route.remove();
-    if (state.routeAhead) state.routeAhead.remove();
+    clearRouteGuidance();
     clearRecoveryRoute();
     state.route = null;
-    state.routeAhead = null;
     state.routeAlong = 0;
 
     const routeColor = ["experimental", "custom_experimental"].includes(
@@ -901,13 +962,12 @@ async function requestRoute() {
 function reset() {
   state.markers.forEach(marker => marker.remove());
   if (state.route) state.route.remove();
-  if (state.routeAhead) state.routeAhead.remove();
+  clearRouteGuidance();
   clearRecoveryRoute();
   state.start = null;
   state.goal = null;
   state.markers = [];
   state.route = null;
-  state.routeAhead = null;
   state.routeLatLngs = [];
   state.routeDistances = [];
   hideNavigation();
@@ -1005,10 +1065,9 @@ undoPointButton.addEventListener("click", () => {
   state.customPoints.pop();
   if (state.route) {
     state.route.remove();
-    if (state.routeAhead) state.routeAhead.remove();
+    clearRouteGuidance();
     clearRecoveryRoute();
     state.route = null;
-    state.routeAhead = null;
     state.routeLatLngs = [];
     state.routeDistances = [];
     hideNavigation();

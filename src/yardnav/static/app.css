@@ -115,6 +115,21 @@ main {
   white-space: nowrap;
 }
 
+.route-direction-hint {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #17211b;
+  background: #f4c95d;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.navigation-banner.off-route .route-direction-hint {
+  display: none;
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;
@@ -407,6 +422,36 @@ button:disabled {
     drop-shadow(0 -1px 0 white);
   transform-origin: 50% 50%;
   transition: transform .2s linear;
+}
+
+.route-direction-marker {
+  display: grid;
+  border: 0;
+  background: transparent;
+  place-items: center;
+  pointer-events: none;
+}
+
+.route-direction-marker span {
+  position: relative;
+  display: block;
+  width: 27px;
+  height: 27px;
+  border: 3px solid white;
+  border-radius: 50%;
+  background: #f4c95d;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+
+.route-direction-marker span::before {
+  position: absolute;
+  top: 5px;
+  left: 9px;
+  width: 9px;
+  height: 14px;
+  clip-path: polygon(50% 0, 100% 48%, 68% 48%, 68% 100%, 32% 100%, 32% 48%, 0 48%);
+  background: #17211b;
+  content: "";
 }
 
 @media (max-width: 720px) {
