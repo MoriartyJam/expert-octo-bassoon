@@ -12,7 +12,7 @@
   <link rel="icon" href="{{ url_for('static', filename='icon.svg', v='1') }}" type="image/svg+xml">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='forward1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='sheet1') }}">
 </head>
 <body>
   <main>
@@ -35,7 +35,7 @@
     <section class="panel" id="panel">
       <button id="panel-toggle" class="panel-toggle" type="button" aria-expanded="true">
         <span class="handle"></span>
-        <span id="panel-toggle-label">Свернуть</span>
+        <span id="panel-toggle-label">Скрыть панель</span>
       </button>
 
       <div class="panel-header">
@@ -106,6 +106,6 @@
     };
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="{{ url_for('static', filename='app.js', v='forward1') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='sheet1') }}"></script>
 </body>
 </html>

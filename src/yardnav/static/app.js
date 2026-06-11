@@ -70,7 +70,12 @@ function isMobile() {
 function setPanelCollapsed(collapsed) {
   panel.classList.toggle("collapsed", collapsed);
   panelToggle.setAttribute("aria-expanded", String(!collapsed));
-  panelToggleLabel.textContent = collapsed ? "Развернуть" : "Свернуть";
+  panelToggleLabel.textContent = collapsed ? "Открыть панель" : "Скрыть панель";
+  for (const child of panel.children) {
+    if (child === panelToggle) continue;
+    child.inert = collapsed;
+    child.setAttribute("aria-hidden", String(collapsed));
+  }
   quickLocateButton.classList.toggle("panel-open", !collapsed);
   window.setTimeout(() => map.invalidateSize(), 230);
 }
@@ -1100,7 +1105,7 @@ document.addEventListener("visibilitychange", () => {
 map.fitBounds(config.bounds, { padding: [30, 30] });
 customControls.hidden = !isCustomMode();
 updateCustomLabels();
-if (isMobile()) setPanelCollapsed(false);
+if (isMobile()) setPanelCollapsed(true);
 if (!("wakeLock" in navigator)) {
   wakeLockButton.classList.add("unsupported");
   updateWakeLockButton("Подсветка не поддерживается");

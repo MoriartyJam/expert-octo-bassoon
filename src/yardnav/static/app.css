@@ -511,22 +511,19 @@ button:disabled {
     border: 1px solid rgb(23 33 27 / 8%);
     border-radius: 22px;
     box-shadow: 0 12px 40px rgb(20 43 29 / 24%);
-    transition: max-height .22s ease, transform .22s ease;
+    transform: translateY(0);
+    transition: transform .24s ease;
   }
 
   .panel.collapsed {
-    max-height: 132px;
+    transform: translateY(calc(100% - 38px));
     overflow: hidden;
-  }
-
-  .panel.collapsed:has(.location-summary:not([hidden])) {
-    max-height: 205px;
   }
 
   .panel-toggle {
     display: grid;
     width: 100%;
-    min-height: 26px;
+    min-height: 29px;
     padding: 0;
     place-items: center;
     gap: 1px;
@@ -565,19 +562,18 @@ button:disabled {
   }
 
   .panel.collapsed .route-controls,
+  .panel.collapsed .panel-header,
+  .panel.collapsed .intro,
+  .panel.collapsed .location-summary,
   .panel.collapsed .summary,
+  .panel.collapsed .panel-footer,
   .panel.collapsed .notes {
-    display: none;
+    visibility: hidden;
   }
 
-  .panel.collapsed .location-summary {
-    margin: 8px 0 0;
-    padding: 8px 10px;
-    font-size: 11px;
-  }
-
-  .panel.collapsed .panel-footer {
-    margin-top: 10px;
+  .panel.collapsed .panel-toggle {
+    color: #17211b;
+    font-weight: 800;
   }
 
   .mode {
@@ -646,7 +642,7 @@ button:disabled {
     position: fixed;
     z-index: 450;
     right: 16px;
-    bottom: calc(156px + env(safe-area-inset-bottom));
+    bottom: calc(58px + env(safe-area-inset-bottom));
     display: grid;
     width: 52px;
     min-height: 52px;
