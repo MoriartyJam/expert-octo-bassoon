@@ -43,6 +43,10 @@ class AppTests(unittest.TestCase):
             "wake-lock",
             "custom-controls",
             "build-custom",
+            "navigation-banner",
+            "maneuver-icon",
+            "maneuver-instruction",
+            "following-maneuver",
         ):
             self.assertIn(f'id="{element_id}"', html)
         self.assertIn("manifest.webmanifest", html)

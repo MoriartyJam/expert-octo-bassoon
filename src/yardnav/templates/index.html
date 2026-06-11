@@ -12,11 +12,19 @@
   <link rel="icon" href="{{ url_for('static', filename='icon.svg', v='1') }}" type="image/svg+xml">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='nav1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='turn1') }}">
 </head>
 <body>
   <main>
     <div id="map" aria-label="Карта маршрута"></div>
+    <section id="navigation-banner" class="navigation-banner" hidden aria-live="polite">
+      <div id="maneuver-icon" class="maneuver-icon" aria-hidden="true">↑</div>
+      <div class="maneuver-copy">
+        <span id="maneuver-distance" class="maneuver-distance">Начните движение</span>
+        <strong id="maneuver-instruction">Двигайтесь по маршруту</strong>
+        <span id="following-maneuver" class="following-maneuver"></span>
+      </div>
+    </section>
     <button id="quick-locate" class="map-action" type="button" aria-label="Показать моё местоположение">
       <span aria-hidden="true">◎</span>
     </button>
@@ -95,6 +103,6 @@
     };
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="{{ url_for('static', filename='app.js', v='gps2') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='turn1') }}"></script>
 </body>
 </html>
