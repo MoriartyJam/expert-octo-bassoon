@@ -16,6 +16,10 @@ const state = {
   locationMarker: null,
   accuracyCircle: null,
   currentLocation: null,
+  filteredLocation: null,
+  locationAccuracy: null,
+  locationTimestamp: null,
+  routeAlong: null,
   followLocation: false,
   customPoints: [],
   customMarkers: [],
@@ -141,11 +145,73 @@ function routePosition(latlng) {
       );
       best = {
         offRoute,
-        along: state.routeDistances[index] + segmentLength * ratio
+        along: state.routeDistances[index] + segmentLength * ratio,
+        latlng: nearestLatLng
       };
     }
   }
   return best;
+}
+
+function filteredPosition(position) {
+  const raw = L.latLng(position.coords.latitude, position.coords.longitude);
+  const accuracy = Math.max(1, Number(position.coords.accuracy) || 100);
+  const timestamp = position.timestamp || Date.now();
+
+  if (!state.filteredLocation) {
+    return { latlng: raw, accuracy, timestamp, ignored: false };
+  }
+
+  const elapsedSeconds = Math.max(
+    .2,
+    (timestamp - state.locationTimestamp) / 1000
+  );
+  const distance = map.distance(state.filteredLocation, raw);
+  const uncertainty = Math.max(
+    6,
+    Math.min(accuracy, state.locationAccuracy || accuracy) * 1.5
+  );
+
+  // Movement inside both GPS accuracy radii is indistinguishable from noise.
+  if (distance <= uncertainty) {
+    return {
+      latlng: state.filteredLocation,
+      accuracy,
+      timestamp,
+      ignored: true
+    };
+  }
+
+  // Reject stale fixes, very inaccurate fixes and impossible bicycle jumps.
+  const plausibleDistance = 12 + elapsedSeconds * 18 + uncertainty;
+  if (
+    timestamp < Date.now() - 20000
+    || accuracy > 80
+    || distance > plausibleDistance
+  ) {
+    return {
+      latlng: state.filteredLocation,
+      accuracy: state.locationAccuracy,
+      timestamp: state.locationTimestamp,
+      ignored: true
+    };
+  }
+
+  const alpha = Math.max(
+    .2,
+    Math.min(.7, (distance - uncertainty) / Math.max(distance, 1))
+  );
+  return {
+    latlng: L.latLng(
+      state.filteredLocation.lat +
+        (raw.lat - state.filteredLocation.lat) * alpha,
+      state.filteredLocation.lng +
+        (raw.lng - state.filteredLocation.lng) * alpha
+    ),
+    accuracy,
+    timestamp,
+    ignored: false
+  };
 }
 
 function updateProgress(latlng) {
@@ -155,6 +221,7 @@ function updateProgress(latlng) {
     return;
   }
   const total = state.routeDistances[state.routeDistances.length - 1];
+  state.routeAlong = position.along;
   const remaining = Math.max(0, total - position.along);
   const percent = total ? Math.min(100, position.along / total * 100) : 100;
   routeProgress.textContent =
@@ -166,34 +233,51 @@ function updateProgress(latlng) {
 }
 
 function updateLocation(position, centerMap = false) {
-  const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
-  state.currentLocation = latlng;
-  const accuracy = Math.round(position.coords.accuracy);
+  const fix = filteredPosition(position);
+  state.filteredLocation = fix.latlng;
+  state.locationAccuracy = fix.accuracy;
+  state.locationTimestamp = fix.timestamp;
+
+  const routeMatch = routePosition(fix.latlng);
+  const snapDistance = Math.max(10, fix.accuracy * 1.2);
+  const displayLatLng = (
+    routeMatch
+    && routeMatch.offRoute <= snapDistance
+  )
+    ? routeMatch.latlng
+    : fix.latlng;
+  state.currentLocation = fix.latlng;
+  const accuracy = Math.round(fix.accuracy);
 
   if (!state.locationMarker) {
-    state.locationMarker = L.circleMarker(latlng, {
+    state.locationMarker = L.circleMarker(displayLatLng, {
       radius: 8,
       color: "#fff",
       weight: 3,
       fillColor: "#1769aa",
       fillOpacity: 1
     }).addTo(map).bindTooltip("Вы здесь");
-    state.accuracyCircle = L.circle(latlng, {
-      radius: position.coords.accuracy,
+    state.accuracyCircle = L.circle(fix.latlng, {
+      radius: fix.accuracy,
       color: "#1769aa",
       weight: 1,
       fillColor: "#4d9bd5",
       fillOpacity: .12
     }).addTo(map);
   } else {
-    state.locationMarker.setLatLng(latlng);
-    state.accuracyCircle.setLatLng(latlng).setRadius(position.coords.accuracy);
+    state.locationMarker.setLatLng(displayLatLng);
+    state.accuracyCircle.setLatLng(fix.latlng).setRadius(fix.accuracy);
   }
 
   locationSummary.hidden = false;
-  locationState.textContent = `Точность геолокации: ±${accuracy} м`;
-  updateProgress(latlng);
-  if (centerMap || state.followLocation) map.panTo(latlng);
+  const snapLabel = routeMatch && routeMatch.offRoute <= snapDistance
+    ? " · привязано к маршруту"
+    : "";
+  const filterLabel = fix.ignored ? " · GPS без подтверждённого движения" : "";
+  locationState.textContent =
+    `Точность геолокации: ±${accuracy} м${snapLabel}${filterLabel}`;
+  updateProgress(fix.latlng);
+  if (centerMap || state.followLocation) map.panTo(displayLatLng);
 }
 
 function locationError(error) {
@@ -366,6 +450,7 @@ function reset() {
   state.route = null;
   state.routeLatLngs = [];
   state.routeDistances = [];
+  state.routeAlong = null;
   state.customMarkers.forEach(marker => marker.remove());
   state.customPoints = [];
   state.customMarkers = [];
