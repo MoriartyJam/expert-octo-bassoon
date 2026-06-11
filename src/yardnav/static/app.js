@@ -11,6 +11,12 @@ const state = {
   markers: [],
   route: null,
   routeAhead: null,
+  recoveryRoute: null,
+  recoveryRequest: null,
+  recoveryTarget: null,
+  recoveryRequestedAt: 0,
+  offRouteActive: false,
+  activeProfile: "mtb",
   routeLatLngs: [],
   routeDistances: [],
   maneuvers: [],
@@ -345,8 +351,110 @@ function hideNavigation() {
   navigationBanner.classList.remove("off-route");
 }
 
+function clearRecoveryRoute() {
+  if (state.recoveryRequest) state.recoveryRequest.abort();
+  if (state.recoveryRoute) state.recoveryRoute.remove();
+  state.recoveryRoute = null;
+  state.recoveryRequest = null;
+  state.recoveryTarget = null;
+  state.offRouteActive = false;
+}
+
+function recoveryProfile() {
+  return ["custom_experimental", "experimental"].includes(state.activeProfile)
+    ? "experimental"
+    : state.activeProfile;
+}
+
+async function updateRecoveryRoute(current, position) {
+  const now = Date.now();
+  const targetAlong = Math.min(
+    state.routeDistances[state.routeDistances.length - 1],
+    position.along + Math.max(180, position.offRoute * 1.5)
+  );
+  const target = routePointAt(targetAlong);
+  if (!target) return;
+
+  const targetChanged = !state.recoveryTarget
+    || map.distance(state.recoveryTarget, target) > 90;
+  if (
+    state.recoveryRequest
+    || (!targetChanged && now - state.recoveryRequestedAt < 15000)
+  ) {
+    return;
+  }
+
+  state.recoveryRequestedAt = now;
+  state.recoveryTarget = target;
+  const requestController = new AbortController();
+  state.recoveryRequest = requestController;
+
+  try {
+    const response = await fetch("/api/route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: requestController.signal,
+      body: JSON.stringify({
+        start_lat: current.lat,
+        start_lon: current.lng,
+        goal_lat: target.lat,
+        goal_lon: target.lng,
+        profile: recoveryProfile()
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Recovery route failed");
+
+    if (state.recoveryRoute) state.recoveryRoute.remove();
+    state.recoveryRoute = L.geoJSON(data, {
+      interactive: false,
+      style: {
+        color: "#168aad",
+        weight: 8,
+        opacity: .95,
+        dashArray: "12 9"
+      }
+    }).addTo(map);
+    state.recoveryRoute.bringToFront();
+    if (state.locationMarker) state.locationMarker.bringToFront();
+    followingManeuver.textContent =
+      `Пунктир ведёт обратно · ${formatDistance(data.properties.distance_m)}`;
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    if (state.recoveryRoute) state.recoveryRoute.remove();
+    state.recoveryRoute = L.polyline([current, target], {
+      interactive: false,
+      color: "#168aad",
+      weight: 7,
+      opacity: .85,
+      dashArray: "8 10"
+    }).addTo(map);
+    followingManeuver.textContent =
+      "Показано прямое направление к маршруту";
+  } finally {
+    if (state.recoveryRequest === requestController) {
+      state.recoveryRequest = null;
+    }
+  }
+}
+
 function followRouteAhead(displayLatLng) {
   if (!state.followLocation) return;
+  if (state.offRouteActive) {
+    const target = state.recoveryTarget;
+    const center = target
+      ? L.latLng(
+          displayLatLng.lat + (target.lat - displayLatLng.lat) * .35,
+          displayLatLng.lng + (target.lng - displayLatLng.lng) * .35
+        )
+      : displayLatLng;
+    if (map.getZoom() < 17) {
+      map.setView(center, 17, { animate: true });
+    } else {
+      map.panTo(center);
+    }
+    return;
+  }
   const along = state.routeAlong || 0;
   const lookAhead = routePointAt(along + 90);
   if (!lookAhead) {
@@ -506,13 +614,38 @@ function updateProgress(latlng) {
   routeProgress.textContent =
     `Маршрут: ${percent.toFixed(0)}% · осталось ${formatDistance(remaining)}` +
     ` · отклонение ${formatDistance(position.offRoute)}`;
-  if (position.offRoute > 80) {
-    status.textContent = "Вы отклонились от маршрута больше чем на 80 м.";
+  const offRouteThreshold = Math.max(
+    30,
+    (state.locationAccuracy || 0) * 2.5
+  );
+  if (position.offRoute > offRouteThreshold) {
+    if (!state.offRouteActive) {
+      state.offRouteActive = true;
+      if ("vibrate" in navigator) navigator.vibrate([180, 100, 180]);
+    }
+    status.textContent =
+      `Вы съехали с маршрута на ${formatDistance(position.offRoute)}. Строю возврат.`;
     navigationBanner.classList.add("off-route");
-    maneuverDistance.textContent = "Маршрут потерян";
-    maneuverInstruction.textContent = "Вернитесь к линии маршрута";
+    maneuverDistance.textContent = "Вы съехали с маршрута";
+    maneuverInstruction.textContent = "Следуйте по синему пунктиру";
     followingManeuver.textContent =
-      `Отклонение ${formatDistance(position.offRoute)}`;
+      `Отклонение ${formatDistance(position.offRoute)} · строю возврат`;
+    void updateRecoveryRoute(latlng, position);
+  } else if (state.offRouteActive) {
+    if (position.offRoute <= offRouteThreshold * .6) {
+      clearRecoveryRoute();
+      status.textContent = "Вы вернулись на основной маршрут.";
+      updateNavigation(position.along);
+      navigationBanner.classList.remove("off-route");
+    } else {
+      navigationBanner.classList.add("off-route");
+      maneuverDistance.textContent = "Возвращение на маршрут";
+      maneuverInstruction.textContent = "Продолжайте по синему пунктиру";
+      followingManeuver.textContent =
+        `До линии маршрута около ${formatDistance(position.offRoute)}`;
+      if (state.recoveryRoute) state.recoveryRoute.bringToFront();
+      if (state.locationMarker) state.locationMarker.bringToFront();
+    }
   } else {
     navigationBanner.classList.remove("off-route");
   }
@@ -653,6 +786,7 @@ function addCustomPoint(latlng) {
   if (state.route) {
     state.route.remove();
     if (state.routeAhead) state.routeAhead.remove();
+    clearRecoveryRoute();
     state.route = null;
     state.routeAhead = null;
     state.routeLatLngs = [];
@@ -698,6 +832,7 @@ async function requestRoute() {
 
     if (state.route) state.route.remove();
     if (state.routeAhead) state.routeAhead.remove();
+    clearRecoveryRoute();
     state.route = null;
     state.routeAhead = null;
     state.routeAlong = 0;
@@ -710,6 +845,7 @@ async function requestRoute() {
     state.route = L.geoJSON(data, {
       style: { color: routeColor, weight: 7, opacity: .9 }
     }).addTo(map);
+    state.activeProfile = data.properties.profile;
     state.routeLatLngs = data.geometry.coordinates.map(
       coordinate => L.latLng(coordinate[1], coordinate[0])
     );
@@ -766,6 +902,7 @@ function reset() {
   state.markers.forEach(marker => marker.remove());
   if (state.route) state.route.remove();
   if (state.routeAhead) state.routeAhead.remove();
+  clearRecoveryRoute();
   state.start = null;
   state.goal = null;
   state.markers = [];
@@ -869,6 +1006,7 @@ undoPointButton.addEventListener("click", () => {
   if (state.route) {
     state.route.remove();
     if (state.routeAhead) state.routeAhead.remove();
+    clearRecoveryRoute();
     state.route = null;
     state.routeAhead = null;
     state.routeLatLngs = [];
