@@ -41,6 +41,7 @@ class AppTests(unittest.TestCase):
             "quick-locate",
             "track",
             "wake-lock",
+            "voice-guidance",
             "custom-controls",
             "build-custom",
             "navigation-banner",

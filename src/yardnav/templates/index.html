@@ -12,7 +12,7 @@
   <link rel="icon" href="{{ url_for('static', filename='icon.svg', v='1') }}" type="image/svg+xml">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='sheet1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='voice1') }}">
 </head>
 <body>
   <main>
@@ -67,6 +67,9 @@
         <div class="location-actions">
           <button id="locate" type="button">Моё местоположение</button>
           <button id="track" class="secondary" type="button">Отслеживать</button>
+          <button id="voice-guidance" class="secondary wide" type="button">
+            Голосовые подсказки: выкл.
+          </button>
           <button id="wake-lock" class="secondary wide" type="button">Не выключать экран</button>
         </div>
 
@@ -94,6 +97,7 @@
       <details class="notes">
         <summary>О данных и геолокации</summary>
         <p>Геолокация обрабатывается только в браузере. На iPhone она требует HTTPS и разрешение пользователя.</p>
+        <p>Голосовые подсказки работают, пока страница открыта; iPhone может приостановить их после блокировки экрана.</p>
         <p>Данные дворов, бордюров и лестниц зависят от полноты OpenStreetMap.</p>
       </details>
     </section>
@@ -106,6 +110,6 @@
     };
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="{{ url_for('static', filename='app.js', v='sheet1') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='voice1') }}"></script>
 </body>
 </html>

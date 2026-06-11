@@ -265,6 +265,11 @@ button:disabled {
   background: #cfe5d3;
 }
 
+#voice-guidance.active {
+  color: white;
+  background: #39734f;
+}
+
 .location-actions .unsupported {
   color: #6e655d;
   background: #e4dfda;
