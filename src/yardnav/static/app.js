@@ -26,7 +26,17 @@ const state = {
   customPoints: [],
   customMarkers: [],
   wakeLock: null,
-  keepScreenOn: false
+  keepScreenOn: false,
+  voiceEnabled: false,
+  voiceSupported: (
+    "speechSynthesis" in window
+    && typeof SpeechSynthesisUtterance !== "undefined"
+  ),
+  voiceRouteId: 0,
+  spokenApproach: null,
+  spokenNow: null,
+  spokenArrival: false,
+  spokenOffRoute: false
 };
 const status = document.querySelector("#status");
 const summary = document.querySelector("#summary");
@@ -45,6 +55,7 @@ const customCount = document.querySelector("#custom-count");
 const undoPointButton = document.querySelector("#undo-point");
 const buildCustomButton = document.querySelector("#build-custom");
 const wakeLockButton = document.querySelector("#wake-lock");
+const voiceGuidanceButton = document.querySelector("#voice-guidance");
 const navigationBanner = document.querySelector("#navigation-banner");
 const maneuverIcon = document.querySelector("#maneuver-icon");
 const maneuverDistance = document.querySelector("#maneuver-distance");
@@ -58,9 +69,85 @@ function isMobile() {
 function setPanelCollapsed(collapsed) {
   panel.classList.toggle("collapsed", collapsed);
   panelToggle.setAttribute("aria-expanded", String(!collapsed));
-  panelToggleLabel.textContent = collapsed ? "Развернуть" : "Свернуть";
+  panelToggleLabel.textContent = collapsed ? "Открыть панель" : "Скрыть панель";
+  for (const child of panel.children) {
+    if (child === panelToggle) continue;
+    child.inert = collapsed;
+    child.setAttribute("aria-hidden", String(collapsed));
+  }
   quickLocateButton.classList.toggle("panel-open", !collapsed);
   window.setTimeout(() => map.invalidateSize(), 230);
+}
+
+function updateVoiceButton(message = null) {
+  voiceGuidanceButton.classList.toggle("active", state.voiceEnabled);
+  voiceGuidanceButton.classList.toggle("unsupported", !state.voiceSupported);
+  voiceGuidanceButton.setAttribute("aria-pressed", String(state.voiceEnabled));
+  voiceGuidanceButton.textContent = message || (
+    state.voiceEnabled
+      ? "Голосовые подсказки: вкл."
+      : "Голосовые подсказки: выкл."
+  );
+}
+
+function preferredVoice() {
+  const voices = window.speechSynthesis?.getVoices() || [];
+  return voices.find(voice => /^ru([-_]|$)/i.test(voice.lang))
+    || voices.find(voice => /^uk([-_]|$)/i.test(voice.lang))
+    || voices[0]
+    || null;
+}
+
+function speak(text, interrupt = false) {
+  if (!state.voiceEnabled || !state.voiceSupported || !text) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voice = preferredVoice();
+  if (voice) {
+    utterance.voice = voice;
+    utterance.lang = voice.lang;
+  } else {
+    utterance.lang = "ru-RU";
+  }
+  utterance.rate = .96;
+  if (interrupt) window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
+function resetVoiceProgress() {
+  state.voiceRouteId += 1;
+  state.spokenApproach = null;
+  state.spokenNow = null;
+  state.spokenArrival = false;
+  state.spokenOffRoute = false;
+}
+
+function updateVoiceGuidance(current, next, distance) {
+  if (!state.voiceEnabled || !current) return;
+  const key =
+    `${state.voiceRouteId}:${Math.round(current.along)}:${current.instruction}`;
+
+  if (current.instruction === "Вы прибыли") {
+    if (!state.spokenArrival && distance <= 20) {
+      state.spokenArrival = true;
+      speak("Вы прибыли в пункт назначения.", true);
+    }
+    return;
+  }
+  if (distance <= 30 && state.spokenNow !== key) {
+    state.spokenNow = key;
+    speak(current.instruction, true);
+    return;
+  }
+  if (distance <= 120 && state.spokenApproach !== key) {
+    state.spokenApproach = key;
+    const meters = Math.max(20, Math.round(distance / 10) * 10);
+    const following = next
+      ? ` Затем ${next.instruction.toLowerCase()}.`
+      : "";
+    speak(
+      `Через ${meters} метров ${current.instruction.toLowerCase()}.${following}`
+    );
+  }
 }
 
 function updateWakeLockButton(message = null) {
@@ -257,6 +344,7 @@ function updateNavigation(along = 0) {
   followingManeuver.textContent = next
     ? `Затем через ${formatDistance(next.along - current.along)}: ${next.instruction.toLowerCase()}`
     : "Конец маршрута";
+  updateVoiceGuidance(current, next, distance);
 }
 
 function hideNavigation() {
@@ -264,6 +352,7 @@ function hideNavigation() {
   state.routeAlong = null;
   navigationBanner.hidden = true;
   navigationBanner.classList.remove("off-route");
+  resetVoiceProgress();
 }
 
 function followRouteAhead(displayLatLng) {
@@ -428,6 +517,10 @@ function updateProgress(latlng) {
     `Маршрут: ${percent.toFixed(0)}% · осталось ${formatDistance(remaining)}` +
     ` · отклонение ${formatDistance(position.offRoute)}`;
   if (position.offRoute > 80) {
+    if (!state.spokenOffRoute) {
+      state.spokenOffRoute = true;
+      speak("Вы отклонились от маршрута. Вернитесь к линии маршрута.", true);
+    }
     status.textContent = "Вы отклонились от маршрута больше чем на 80 м.";
     navigationBanner.classList.add("off-route");
     maneuverDistance.textContent = "Маршрут потерян";
@@ -435,6 +528,7 @@ function updateProgress(latlng) {
     followingManeuver.textContent =
       `Отклонение ${formatDistance(position.offRoute)}`;
   } else {
+    if (position.offRoute < 50) state.spokenOffRoute = false;
     navigationBanner.classList.remove("off-route");
   }
 }
@@ -621,6 +715,7 @@ async function requestRoute() {
     state.route = L.geoJSON(data, {
       style: { color: routeColor, weight: 7, opacity: .9 }
     }).addTo(map);
+    resetVoiceProgress();
     state.routeLatLngs = data.geometry.coordinates.map(
       coordinate => L.latLng(coordinate[1], coordinate[0])
     );
@@ -771,6 +866,23 @@ wakeLockButton.addEventListener("click", async () => {
       : "Браузер не разрешил постоянную подсветку экрана.";
   }
 });
+voiceGuidanceButton.addEventListener("click", () => {
+  if (!state.voiceSupported) {
+    updateVoiceButton("Голос не поддерживается");
+    status.textContent = "Этот браузер не поддерживает голосовые подсказки.";
+    return;
+  }
+  state.voiceEnabled = !state.voiceEnabled;
+  window.speechSynthesis.cancel();
+  resetVoiceProgress();
+  updateVoiceButton();
+  if (state.voiceEnabled) {
+    speak("Голосовые подсказки включены.", true);
+    status.textContent = "Голосовые подсказки включены.";
+  } else {
+    status.textContent = "Голосовые подсказки выключены.";
+  }
+});
 undoPointButton.addEventListener("click", () => {
   const marker = state.customMarkers.pop();
   if (marker) marker.remove();
@@ -812,8 +924,15 @@ document.addEventListener("visibilitychange", () => {
 map.fitBounds(config.bounds, { padding: [30, 30] });
 customControls.hidden = !isCustomMode();
 updateCustomLabels();
-if (isMobile()) setPanelCollapsed(false);
+if (isMobile()) setPanelCollapsed(true);
 if (!("wakeLock" in navigator)) {
   wakeLockButton.classList.add("unsupported");
   updateWakeLockButton("Подсветка не поддерживается");
 }
+if (state.voiceSupported) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.addEventListener?.("voiceschanged", preferredVoice);
+} else {
+  voiceGuidanceButton.disabled = true;
+}
+updateVoiceButton();
