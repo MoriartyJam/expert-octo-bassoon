@@ -16,16 +16,28 @@ main {
   height: 100%;
   margin: 0;
   overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html,
+body {
+  position: fixed;
+  inset: 0;
 }
 
 main {
   position: relative;
+  touch-action: none;
 }
 
 #map {
   position: absolute;
   inset: 0 0 0 360px;
   min-height: 100%;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .panel {
@@ -37,6 +49,8 @@ main {
   overflow-y: auto;
   background: #f7f4ea;
   box-shadow: 12px 0 35px rgb(20 43 29 / 14%);
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .panel-toggle,

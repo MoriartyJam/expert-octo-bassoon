@@ -64,9 +64,49 @@ const maneuverIcon = document.querySelector("#maneuver-icon");
 const maneuverDistance = document.querySelector("#maneuver-distance");
 const maneuverInstruction = document.querySelector("#maneuver-instruction");
 const followingManeuver = document.querySelector("#following-maneuver");
+const mapElement = document.querySelector("#map");
 
 function isMobile() {
   return window.matchMedia("(max-width: 720px)").matches;
+}
+
+function initializeTelegramWebApp() {
+  const telegram = window.Telegram?.WebApp;
+  if (!telegram) return;
+  document.documentElement.classList.add("telegram-web-app");
+  telegram.ready();
+  telegram.expand();
+  telegram.enableClosingConfirmation?.();
+  telegram.disableVerticalSwipes?.();
+}
+
+function protectMapGestures() {
+  let touchStart = null;
+
+  mapElement.addEventListener("touchstart", event => {
+    if (event.touches.length !== 1) {
+      touchStart = null;
+      return;
+    }
+    const touch = event.touches[0];
+    touchStart = { x: touch.clientX, y: touch.clientY };
+  }, { capture: true, passive: true });
+
+  mapElement.addEventListener("touchmove", event => {
+    if (!touchStart || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const horizontal = Math.abs(touch.clientX - touchStart.x);
+    const vertical = Math.abs(touch.clientY - touchStart.y);
+    if (horizontal > vertical && horizontal > 4 && event.cancelable) {
+      event.preventDefault();
+    }
+  }, { capture: true, passive: false });
+
+  const clearTouch = () => {
+    touchStart = null;
+  };
+  mapElement.addEventListener("touchend", clearTouch, { passive: true });
+  mapElement.addEventListener("touchcancel", clearTouch, { passive: true });
 }
 
 function setPanelCollapsed(collapsed) {
@@ -999,6 +1039,8 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 map.fitBounds(config.bounds, { padding: [30, 30] });
+initializeTelegramWebApp();
+protectMapGestures();
 customControls.hidden = !isCustomMode();
 updateCustomLabels();
 if (isMobile()) setPanelCollapsed(true);
