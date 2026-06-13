@@ -371,6 +371,15 @@ button:disabled {
   stroke-linejoin: round;
 }
 
+.leaflet-rotation-pane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
 @media (max-width: 720px) {
   #map {
     inset: 0;

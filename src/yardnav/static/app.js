@@ -5,6 +5,18 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors"
 }).addTo(map);
 
+const rotationPane = L.DomUtil.create(
+  "div",
+  "leaflet-rotation-pane",
+  map.getPane("mapPane")
+);
+for (const paneName of (
+  ["tilePane", "shadowPane", "overlayPane", "markerPane", "tooltipPane", "popupPane"]
+)) {
+  const pane = map.getPane(paneName);
+  if (pane) rotationPane.appendChild(pane);
+}
+
 const state = {
   start: null,
   goal: null,
@@ -36,7 +48,8 @@ const state = {
   spokenApproach: null,
   spokenNow: null,
   spokenArrival: false,
-  spokenOffRoute: false
+  spokenOffRoute: false,
+  mapBearing: 0
 };
 const status = document.querySelector("#status");
 const summary = document.querySelector("#summary");
@@ -228,6 +241,34 @@ function bearing(start, end) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
+function bearingDifference(from, to) {
+  return ((to - from + 540) % 360) - 180;
+}
+
+function setCourseUp(bearingValue, immediate = false) {
+  const target = Number.isFinite(bearingValue) ? bearingValue : 0;
+  state.mapBearing += bearingDifference(state.mapBearing, target);
+  const size = map.getSize();
+  const panePosition = map._getMapPanePos();
+  rotationPane.style.transition = immediate ? "none" : "transform .35s ease-out";
+  rotationPane.style.transformOrigin =
+    `${size.x / 2 - panePosition.x}px ${size.y / 2 - panePosition.y}px`;
+  rotationPane.style.transform =
+    `rotate(${-state.mapBearing}deg) scale(1.42)`;
+}
+
+function resetCourseUp() {
+  state.mapBearing = 0;
+  rotationPane.style.transition = "transform .3s ease-out";
+  rotationPane.style.transform = "rotate(0deg) scale(1)";
+}
+
+function routeBearingAhead(along) {
+  const current = routePointAt(along);
+  const ahead = routePointAt(along + 45);
+  return current && ahead ? bearing(current, ahead) : state.mapBearing;
+}
+
 function routePointAt(distance) {
   if (!state.routeLatLngs.length) return null;
   if (state.routeLatLngs.length === 1) return state.routeLatLngs[0];
@@ -358,20 +399,14 @@ function hideNavigation() {
 function followRouteAhead(displayLatLng) {
   if (!state.followLocation) return;
   const along = state.routeAlong || 0;
-  const lookAhead = routePointAt(along + 90);
-  if (!lookAhead) {
-    map.panTo(displayLatLng);
-    return;
-  }
-  const center = L.latLng(
-    displayLatLng.lat + (lookAhead.lat - displayLatLng.lat) * .55,
-    displayLatLng.lng + (lookAhead.lng - displayLatLng.lng) * .55
-  );
   if (map.getZoom() < 17) {
-    map.setView(center, 17, { animate: true });
+    map.setView(displayLatLng, 17, { animate: true });
   } else {
-    map.panTo(center);
+    map.panTo(displayLatLng);
   }
+  window.requestAnimationFrame(() => {
+    setCourseUp(routeBearingAhead(along));
+  });
 }
 
 function updateRouteAhead(position) {
@@ -575,8 +610,9 @@ function updateLocation(position, centerMap = false) {
     ? " · привязано к маршруту"
     : "";
   const filterLabel = fix.ignored ? " · GPS без подтверждённого движения" : "";
+  const courseLabel = state.followLocation ? " · маршрут направлен вверх" : "";
   locationState.textContent =
-    `Точность геолокации: ±${accuracy} м${snapLabel}${filterLabel}`;
+    `Точность геолокации: ±${accuracy} м${snapLabel}${filterLabel}${courseLabel}`;
   updateProgress(fix.latlng);
   if (centerMap) {
     map.panTo(displayLatLng);
@@ -833,6 +869,8 @@ trackButton.addEventListener("click", () => {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
     state.followLocation = false;
+    map.dragging.enable();
+    resetCourseUp();
     trackButton.classList.remove("active");
     trackButton.textContent = "Отслеживать";
     status.textContent = "Отслеживание остановлено.";
@@ -841,9 +879,17 @@ trackButton.addEventListener("click", () => {
   }
   if (!requireGeolocation()) return;
   state.followLocation = true;
+  map.dragging.disable();
+  if (state.currentLocation) {
+    map.setView(state.currentLocation, Math.max(17, map.getZoom()));
+    window.requestAnimationFrame(() => {
+      setCourseUp(routeBearingAhead(state.routeAlong || 0), true);
+    });
+  }
   trackButton.classList.add("active");
   trackButton.textContent = "Остановить отслеживание";
-  status.textContent = "Отслеживание местоположения включено.";
+  status.textContent =
+    "Отслеживание включено: маршрут направлен вверх, вы находитесь в центре.";
   requestWakeLock();
   state.watchId = navigator.geolocation.watchPosition(
     position => updateLocation(position),
@@ -911,6 +957,15 @@ profileSelect.addEventListener("change", () => {
 window.addEventListener("resize", () => {
   if (!isMobile()) setPanelCollapsed(false);
   map.invalidateSize();
+  if (state.followLocation) {
+    window.requestAnimationFrame(() => {
+      setCourseUp(routeBearingAhead(state.routeAlong || 0), true);
+    });
+  }
+});
+map.on("zoomend moveend", () => {
+  if (!state.followLocation) return;
+  setCourseUp(routeBearingAhead(state.routeAlong || 0), true);
 });
 document.addEventListener("visibilitychange", () => {
   if (
