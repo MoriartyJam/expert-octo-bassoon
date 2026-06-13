@@ -12,7 +12,7 @@
   <link rel="icon" href="{{ url_for('static', filename='icon.svg', v='1') }}" type="image/svg+xml">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='voice1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='turn1') }}">
 </head>
 <body>
   <main>
@@ -23,9 +23,6 @@
         <span id="maneuver-distance" class="maneuver-distance">Начните движение</span>
         <strong id="maneuver-instruction">Двигайтесь по маршруту</strong>
         <span id="following-maneuver" class="following-maneuver"></span>
-        <span id="route-direction-hint" class="route-direction-hint">
-          Жёлтые стрелки на карте — путь вперёд
-        </span>
       </div>
     </section>
     <button id="quick-locate" class="map-action" type="button" aria-label="Показать моё местоположение">
@@ -35,7 +32,7 @@
     <section class="panel" id="panel">
       <button id="panel-toggle" class="panel-toggle" type="button" aria-expanded="true">
         <span class="handle"></span>
-        <span id="panel-toggle-label">Скрыть панель</span>
+        <span id="panel-toggle-label">Свернуть</span>
       </button>
 
       <div class="panel-header">
@@ -67,9 +64,6 @@
         <div class="location-actions">
           <button id="locate" type="button">Моё местоположение</button>
           <button id="track" class="secondary" type="button">Отслеживать</button>
-          <button id="voice-guidance" class="secondary wide" type="button">
-            Голосовые подсказки: выкл.
-          </button>
           <button id="wake-lock" class="secondary wide" type="button">Не выключать экран</button>
         </div>
 
@@ -97,7 +91,6 @@
       <details class="notes">
         <summary>О данных и геолокации</summary>
         <p>Геолокация обрабатывается только в браузере. На iPhone она требует HTTPS и разрешение пользователя.</p>
-        <p>Голосовые подсказки работают, пока страница открыта; iPhone может приостановить их после блокировки экрана.</p>
         <p>Данные дворов, бордюров и лестниц зависят от полноты OpenStreetMap.</p>
       </details>
     </section>
@@ -110,6 +103,6 @@
     };
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="{{ url_for('static', filename='app.js', v='voice1') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='turn1') }}"></script>
 </body>
 </html>

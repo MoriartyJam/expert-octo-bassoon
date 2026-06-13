@@ -11,14 +11,6 @@ const state = {
   markers: [],
   route: null,
   routeAhead: null,
-  routePassed: null,
-  routeDirectionMarkers: [],
-  recoveryRoute: null,
-  recoveryRequest: null,
-  recoveryTarget: null,
-  recoveryRequestedAt: 0,
-  offRouteActive: false,
-  activeProfile: "mtb",
   routeLatLngs: [],
   routeDistances: [],
   maneuvers: [],
@@ -29,27 +21,12 @@ const state = {
   filteredLocation: null,
   locationAccuracy: null,
   locationTimestamp: null,
-  heading: 0,
-  compassHeading: null,
-  compassTimestamp: null,
-  compassActive: false,
   routeAlong: null,
   followLocation: false,
   customPoints: [],
   customMarkers: [],
   wakeLock: null,
-  keepScreenOn: false,
-  voiceEnabled: false,
-  voiceSupported: (
-    "speechSynthesis" in window
-    && typeof SpeechSynthesisUtterance !== "undefined"
-  ),
-  voiceId: 0,
-  spokenManeuver: null,
-  spokenApproach: null,
-  spokenNow: null,
-  spokenArrival: false,
-  spokenOffRoute: false
+  keepScreenOn: false
 };
 const status = document.querySelector("#status");
 const summary = document.querySelector("#summary");
@@ -68,7 +45,6 @@ const customCount = document.querySelector("#custom-count");
 const undoPointButton = document.querySelector("#undo-point");
 const buildCustomButton = document.querySelector("#build-custom");
 const wakeLockButton = document.querySelector("#wake-lock");
-const voiceGuidanceButton = document.querySelector("#voice-guidance");
 const navigationBanner = document.querySelector("#navigation-banner");
 const maneuverIcon = document.querySelector("#maneuver-icon");
 const maneuverDistance = document.querySelector("#maneuver-distance");
@@ -82,12 +58,7 @@ function isMobile() {
 function setPanelCollapsed(collapsed) {
   panel.classList.toggle("collapsed", collapsed);
   panelToggle.setAttribute("aria-expanded", String(!collapsed));
-  panelToggleLabel.textContent = collapsed ? "Открыть панель" : "Скрыть панель";
-  for (const child of panel.children) {
-    if (child === panelToggle) continue;
-    child.inert = collapsed;
-    child.setAttribute("aria-hidden", String(collapsed));
-  }
+  panelToggleLabel.textContent = collapsed ? "Развернуть" : "Свернуть";
   quickLocateButton.classList.toggle("panel-open", !collapsed);
   window.setTimeout(() => map.invalidateSize(), 230);
 }
@@ -99,86 +70,6 @@ function updateWakeLockButton(message = null) {
       ? "Экран остаётся включённым"
       : "Не выключать экран"
   );
-}
-
-function updateVoiceButton(message = null) {
-  voiceGuidanceButton.classList.toggle("active", state.voiceEnabled);
-  voiceGuidanceButton.classList.toggle("unsupported", !state.voiceSupported);
-  voiceGuidanceButton.setAttribute("aria-pressed", String(state.voiceEnabled));
-  voiceGuidanceButton.textContent = message || (
-    state.voiceEnabled
-      ? "Голосовые подсказки: вкл."
-      : "Голосовые подсказки: выкл."
-  );
-}
-
-function preferredVoice() {
-  const voices = window.speechSynthesis?.getVoices() || [];
-  return voices.find(voice => /^ru([-_]|$)/i.test(voice.lang))
-    || voices.find(voice => /^uk([-_]|$)/i.test(voice.lang))
-    || voices.find(voice => /^en([-_]|$)/i.test(voice.lang))
-    || voices[0]
-    || null;
-}
-
-function speak(text, options = {}) {
-  if (!state.voiceEnabled || !state.voiceSupported || !text) return;
-  const utterance = new SpeechSynthesisUtterance(text);
-  const voice = preferredVoice();
-  if (voice) {
-    utterance.voice = voice;
-    utterance.lang = voice.lang;
-  } else {
-    utterance.lang = "ru-RU";
-  }
-  utterance.rate = options.rate || 1;
-  utterance.pitch = 1;
-  utterance.volume = 1;
-  if (options.interrupt) window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
-}
-
-function resetVoiceProgress() {
-  state.voiceId += 1;
-  state.spokenManeuver = null;
-  state.spokenApproach = null;
-  state.spokenNow = null;
-  state.spokenArrival = false;
-  state.spokenOffRoute = false;
-}
-
-function voiceManeuverKey(maneuver) {
-  return `${state.voiceId}:${Math.round(maneuver.along)}:${maneuver.instruction}`;
-}
-
-function updateVoiceGuidance(current, next, distance) {
-  if (!state.voiceEnabled || !current) return;
-  const key = voiceManeuverKey(current);
-
-  if (current.instruction === "Вы прибыли") {
-    if (!state.spokenArrival && distance <= 20) {
-      state.spokenArrival = true;
-      speak("Вы прибыли в пункт назначения.", { interrupt: true });
-    }
-    return;
-  }
-
-  if (distance <= 35 && state.spokenNow !== key) {
-    state.spokenNow = key;
-    speak(current.instruction, { interrupt: true, rate: .95 });
-    return;
-  }
-
-  if (distance <= 130 && state.spokenApproach !== key) {
-    state.spokenApproach = key;
-    const roundedDistance = Math.max(20, Math.round(distance / 10) * 10);
-    const following = next
-      ? ` Затем ${next.instruction.toLowerCase()}.`
-      : "";
-    speak(
-      `Через ${roundedDistance} метров ${current.instruction.toLowerCase()}.${following}`
-    );
-  }
 }
 
 async function requestWakeLock() {
@@ -250,81 +141,6 @@ function bearing(start, end) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
-function setLocationHeading(heading) {
-  if (!Number.isFinite(heading)) return;
-  state.heading = (heading + 360) % 360;
-  const arrow = state.locationMarker?.getElement()
-    ?.querySelector(".location-arrow");
-  if (arrow) {
-    arrow.style.transform = `rotate(${state.heading}deg)`;
-  }
-}
-
-function deviceHeading(event) {
-  if (Number.isFinite(event.webkitCompassHeading)) {
-    return event.webkitCompassHeading;
-  }
-  if (event.absolute && Number.isFinite(event.alpha)) {
-    const screenAngle = screen.orientation?.angle || window.orientation || 0;
-    return 360 - event.alpha + screenAngle;
-  }
-  return null;
-}
-
-function handleDeviceOrientation(event) {
-  const heading = deviceHeading(event);
-  if (!Number.isFinite(heading)) return;
-  state.compassHeading = heading;
-  state.compassTimestamp = Date.now();
-  setLocationHeading(heading);
-}
-
-async function enableCompass() {
-  if (state.compassActive || typeof DeviceOrientationEvent === "undefined") {
-    return;
-  }
-  try {
-    if (typeof DeviceOrientationEvent.requestPermission === "function") {
-      const permission = await DeviceOrientationEvent.requestPermission();
-      if (permission !== "granted") return;
-    }
-    window.addEventListener("deviceorientation", handleDeviceOrientation, true);
-    window.addEventListener(
-      "deviceorientationabsolute",
-      handleDeviceOrientation,
-      true
-    );
-    state.compassActive = true;
-  } catch (error) {
-    state.compassActive = false;
-  }
-}
-
-function headingForPosition(position, previousLocation, fix, routeMatch) {
-  if (
-    Number.isFinite(state.compassHeading)
-    && Date.now() - state.compassTimestamp < 5000
-  ) {
-    return state.compassHeading;
-  }
-  if (Number.isFinite(position.coords.heading)) {
-    return position.coords.heading;
-  }
-  if (
-    previousLocation
-    && map.distance(previousLocation, fix.latlng) >= 4
-  ) {
-    return bearing(previousLocation, fix.latlng);
-  }
-  if (routeMatch && state.routeLatLngs[routeMatch.segmentIndex + 1]) {
-    return bearing(
-      routeMatch.latlng,
-      state.routeLatLngs[routeMatch.segmentIndex + 1]
-    );
-  }
-  return state.heading;
-}
-
 function routePointAt(distance) {
   if (!state.routeLatLngs.length) return null;
   if (state.routeLatLngs.length === 1) return state.routeLatLngs[0];
@@ -355,23 +171,6 @@ function routePointAt(distance) {
     start.lat + (end.lat - start.lat) * ratio,
     start.lng + (end.lng - start.lng) * ratio
   );
-}
-
-function routePointsBetween(startDistance, endDistance) {
-  if (state.routeLatLngs.length < 2) return [];
-  const start = Math.max(0, startDistance);
-  const end = Math.max(start, endDistance);
-  const points = [routePointAt(start)];
-  for (let index = 1; index < state.routeLatLngs.length - 1; index += 1) {
-    if (
-      state.routeDistances[index] > start
-      && state.routeDistances[index] < end
-    ) {
-      points.push(state.routeLatLngs[index]);
-    }
-  }
-  points.push(routePointAt(end));
-  return points.filter(Boolean);
 }
 
 function maneuverForAngle(angle) {
@@ -458,7 +257,6 @@ function updateNavigation(along = 0) {
   followingManeuver.textContent = next
     ? `Затем через ${formatDistance(next.along - current.along)}: ${next.instruction.toLowerCase()}`
     : "Конец маршрута";
-  updateVoiceGuidance(current, next, distance);
 }
 
 function hideNavigation() {
@@ -466,126 +264,10 @@ function hideNavigation() {
   state.routeAlong = null;
   navigationBanner.hidden = true;
   navigationBanner.classList.remove("off-route");
-  resetVoiceProgress();
-}
-
-function clearRecoveryRoute() {
-  if (state.recoveryRequest) state.recoveryRequest.abort();
-  if (state.recoveryRoute) state.recoveryRoute.remove();
-  state.recoveryRoute = null;
-  state.recoveryRequest = null;
-  state.recoveryTarget = null;
-  state.offRouteActive = false;
-}
-
-function clearDirectionMarkers() {
-  state.routeDirectionMarkers.forEach(marker => marker.remove());
-  state.routeDirectionMarkers = [];
-}
-
-function clearRouteGuidance() {
-  if (state.routeAhead) state.routeAhead.remove();
-  if (state.routePassed) state.routePassed.remove();
-  clearDirectionMarkers();
-  state.routeAhead = null;
-  state.routePassed = null;
-}
-
-function recoveryProfile() {
-  return ["custom_experimental", "experimental"].includes(state.activeProfile)
-    ? "experimental"
-    : state.activeProfile;
-}
-
-async function updateRecoveryRoute(current, position) {
-  const now = Date.now();
-  const targetAlong = Math.min(
-    state.routeDistances[state.routeDistances.length - 1],
-    position.along + Math.max(180, position.offRoute * 1.5)
-  );
-  const target = routePointAt(targetAlong);
-  if (!target) return;
-
-  const targetChanged = !state.recoveryTarget
-    || map.distance(state.recoveryTarget, target) > 90;
-  if (
-    state.recoveryRequest
-    || (!targetChanged && now - state.recoveryRequestedAt < 15000)
-  ) {
-    return;
-  }
-
-  state.recoveryRequestedAt = now;
-  state.recoveryTarget = target;
-  const requestController = new AbortController();
-  state.recoveryRequest = requestController;
-
-  try {
-    const response = await fetch("/api/route", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: requestController.signal,
-      body: JSON.stringify({
-        start_lat: current.lat,
-        start_lon: current.lng,
-        goal_lat: target.lat,
-        goal_lon: target.lng,
-        profile: recoveryProfile()
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Recovery route failed");
-
-    if (state.recoveryRoute) state.recoveryRoute.remove();
-    state.recoveryRoute = L.geoJSON(data, {
-      interactive: false,
-      style: {
-        color: "#168aad",
-        weight: 8,
-        opacity: .95,
-        dashArray: "12 9"
-      }
-    }).addTo(map);
-    state.recoveryRoute.bringToFront();
-    if (state.locationMarker) state.locationMarker.bringToFront();
-    followingManeuver.textContent =
-      `Пунктир ведёт обратно · ${formatDistance(data.properties.distance_m)}`;
-  } catch (error) {
-    if (error.name === "AbortError") return;
-    if (state.recoveryRoute) state.recoveryRoute.remove();
-    state.recoveryRoute = L.polyline([current, target], {
-      interactive: false,
-      color: "#168aad",
-      weight: 7,
-      opacity: .85,
-      dashArray: "8 10"
-    }).addTo(map);
-    followingManeuver.textContent =
-      "Показано прямое направление к маршруту";
-  } finally {
-    if (state.recoveryRequest === requestController) {
-      state.recoveryRequest = null;
-    }
-  }
 }
 
 function followRouteAhead(displayLatLng) {
   if (!state.followLocation) return;
-  if (state.offRouteActive) {
-    const target = state.recoveryTarget;
-    const center = target
-      ? L.latLng(
-          displayLatLng.lat + (target.lat - displayLatLng.lat) * .35,
-          displayLatLng.lng + (target.lng - displayLatLng.lng) * .35
-        )
-      : displayLatLng;
-    if (map.getZoom() < 17) {
-      map.setView(center, 17, { animate: true });
-    } else {
-      map.panTo(center);
-    }
-    return;
-  }
   const along = state.routeAlong || 0;
   const lookAhead = routePointAt(along + 90);
   if (!lookAhead) {
@@ -605,12 +287,21 @@ function followRouteAhead(displayLatLng) {
 
 function updateRouteAhead(position) {
   if (!position || state.routeLatLngs.length < 2) return;
-  const total = state.routeDistances[state.routeDistances.length - 1];
   const endDistance = Math.min(
-    total,
+    state.routeDistances[state.routeDistances.length - 1],
     position.along + 350
   );
-  const points = routePointsBetween(position.along, endDistance);
+  const points = [position.latlng];
+  for (
+    let index = position.segmentIndex + 1;
+    index < state.routeLatLngs.length
+      && state.routeDistances[index] < endDistance;
+    index += 1
+  ) {
+    points.push(state.routeLatLngs[index]);
+  }
+  const end = routePointAt(endDistance);
+  if (end) points.push(end);
 
   if (!state.routeAhead) {
     state.routeAhead = L.polyline(points, {
@@ -622,47 +313,7 @@ function updateRouteAhead(position) {
   } else {
     state.routeAhead.setLatLngs(points);
   }
-
-  const passedPoints = routePointsBetween(0, position.along);
-  if (position.along >= 10 && passedPoints.length >= 2) {
-    if (!state.routePassed) {
-      state.routePassed = L.polyline(passedPoints, {
-        color: "#737d77",
-        weight: 7,
-        opacity: .55,
-        interactive: false
-      }).addTo(map);
-    } else {
-      state.routePassed.setLatLngs(passedPoints);
-    }
-  }
-
-  clearDirectionMarkers();
-  for (
-    let distance = position.along + 45;
-    distance < endDistance;
-    distance += 75
-  ) {
-    const arrowPosition = routePointAt(distance);
-    const arrowTarget = routePointAt(Math.min(distance + 18, total));
-    if (!arrowPosition || !arrowTarget) continue;
-    const direction = bearing(arrowPosition, arrowTarget);
-    const marker = L.marker(arrowPosition, {
-      interactive: false,
-      zIndexOffset: 700,
-      icon: L.divIcon({
-        className: "route-direction-marker",
-        html: `<span style="transform: rotate(${direction}deg)"></span>`,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15]
-      })
-    }).addTo(map);
-    state.routeDirectionMarkers.push(marker);
-  }
-
-  if (state.routePassed) state.routePassed.bringToFront();
   state.routeAhead.bringToFront();
-  state.routeDirectionMarkers.forEach(marker => marker.setZIndexOffset(800));
   if (state.locationMarker) state.locationMarker.bringToFront();
 }
 
@@ -776,54 +427,19 @@ function updateProgress(latlng) {
   routeProgress.textContent =
     `Маршрут: ${percent.toFixed(0)}% · осталось ${formatDistance(remaining)}` +
     ` · отклонение ${formatDistance(position.offRoute)}`;
-  const offRouteThreshold = Math.max(
-    30,
-    (state.locationAccuracy || 0) * 2.5
-  );
-  if (position.offRoute > offRouteThreshold) {
-    if (!state.offRouteActive) {
-      state.offRouteActive = true;
-      if ("vibrate" in navigator) navigator.vibrate([180, 100, 180]);
-      if (!state.spokenOffRoute) {
-        state.spokenOffRoute = true;
-        speak(
-          "Вы съехали с маршрута. Следуйте по синему пунктиру, чтобы вернуться.",
-          { interrupt: true }
-        );
-      }
-    }
-    status.textContent =
-      `Вы съехали с маршрута на ${formatDistance(position.offRoute)}. Строю возврат.`;
+  if (position.offRoute > 80) {
+    status.textContent = "Вы отклонились от маршрута больше чем на 80 м.";
     navigationBanner.classList.add("off-route");
-    maneuverDistance.textContent = "Вы съехали с маршрута";
-    maneuverInstruction.textContent = "Следуйте по синему пунктиру";
+    maneuverDistance.textContent = "Маршрут потерян";
+    maneuverInstruction.textContent = "Вернитесь к линии маршрута";
     followingManeuver.textContent =
-      `Отклонение ${formatDistance(position.offRoute)} · строю возврат`;
-    void updateRecoveryRoute(latlng, position);
-  } else if (state.offRouteActive) {
-    if (position.offRoute <= offRouteThreshold * .6) {
-      clearRecoveryRoute();
-      status.textContent = "Вы вернулись на основной маршрут.";
-      state.spokenOffRoute = false;
-      updateNavigation(position.along);
-      speak("Вы вернулись на основной маршрут.", { interrupt: true });
-      navigationBanner.classList.remove("off-route");
-    } else {
-      navigationBanner.classList.add("off-route");
-      maneuverDistance.textContent = "Возвращение на маршрут";
-      maneuverInstruction.textContent = "Продолжайте по синему пунктиру";
-      followingManeuver.textContent =
-        `До линии маршрута около ${formatDistance(position.offRoute)}`;
-      if (state.recoveryRoute) state.recoveryRoute.bringToFront();
-      if (state.locationMarker) state.locationMarker.bringToFront();
-    }
+      `Отклонение ${formatDistance(position.offRoute)}`;
   } else {
     navigationBanner.classList.remove("off-route");
   }
 }
 
 function updateLocation(position, centerMap = false) {
-  const previousLocation = state.filteredLocation;
   const fix = filteredPosition(position);
   state.filteredLocation = fix.latlng;
   state.locationAccuracy = fix.accuracy;
@@ -839,22 +455,14 @@ function updateLocation(position, centerMap = false) {
     : fix.latlng;
   state.currentLocation = fix.latlng;
   const accuracy = Math.round(fix.accuracy);
-  const heading = headingForPosition(
-    position,
-    previousLocation,
-    fix,
-    routeMatch
-  );
 
   if (!state.locationMarker) {
-    state.locationMarker = L.marker(displayLatLng, {
-      zIndexOffset: 1000,
-      icon: L.divIcon({
-        className: "location-heading-marker",
-        html: '<span class="location-arrow" aria-hidden="true"></span>',
-        iconSize: [42, 42],
-        iconAnchor: [21, 21]
-      })
+    state.locationMarker = L.circleMarker(displayLatLng, {
+      radius: 8,
+      color: "#fff",
+      weight: 3,
+      fillColor: "#1769aa",
+      fillOpacity: 1
     }).addTo(map).bindTooltip("Вы здесь");
     state.accuracyCircle = L.circle(fix.latlng, {
       radius: fix.accuracy,
@@ -867,7 +475,6 @@ function updateLocation(position, centerMap = false) {
     state.locationMarker.setLatLng(displayLatLng);
     state.accuracyCircle.setLatLng(fix.latlng).setRadius(fix.accuracy);
   }
-  setLocationHeading(heading);
 
   locationSummary.hidden = false;
   const snapLabel = routeMatch && routeMatch.offRoute <= snapDistance
@@ -956,9 +563,9 @@ function addCustomPoint(latlng) {
   state.customMarkers.push(marker);
   if (state.route) {
     state.route.remove();
-    clearRouteGuidance();
-    clearRecoveryRoute();
+    if (state.routeAhead) state.routeAhead.remove();
     state.route = null;
+    state.routeAhead = null;
     state.routeLatLngs = [];
     state.routeDistances = [];
     hideNavigation();
@@ -1001,9 +608,9 @@ async function requestRoute() {
     if (!response.ok) throw new Error(data.error || "Не удалось построить маршрут");
 
     if (state.route) state.route.remove();
-    clearRouteGuidance();
-    clearRecoveryRoute();
+    if (state.routeAhead) state.routeAhead.remove();
     state.route = null;
+    state.routeAhead = null;
     state.routeAlong = 0;
 
     const routeColor = ["experimental", "custom_experimental"].includes(
@@ -1014,8 +621,6 @@ async function requestRoute() {
     state.route = L.geoJSON(data, {
       style: { color: routeColor, weight: 7, opacity: .9 }
     }).addTo(map);
-    state.activeProfile = data.properties.profile;
-    resetVoiceProgress();
     state.routeLatLngs = data.geometry.coordinates.map(
       coordinate => L.latLng(coordinate[1], coordinate[0])
     );
@@ -1071,12 +676,12 @@ async function requestRoute() {
 function reset() {
   state.markers.forEach(marker => marker.remove());
   if (state.route) state.route.remove();
-  clearRouteGuidance();
-  clearRecoveryRoute();
+  if (state.routeAhead) state.routeAhead.remove();
   state.start = null;
   state.goal = null;
   state.markers = [];
   state.route = null;
+  state.routeAhead = null;
   state.routeLatLngs = [];
   state.routeDistances = [];
   hideNavigation();
@@ -1106,9 +711,8 @@ map.on("click", event => {
 });
 
 document.querySelector("#reset").addEventListener("click", reset);
-locateButton.addEventListener("click", async () => {
+locateButton.addEventListener("click", () => {
   if (!requireGeolocation()) return;
-  await enableCompass();
   status.textContent = "Определяю местоположение...";
   navigator.geolocation.getCurrentPosition(
     position => {
@@ -1129,7 +733,7 @@ quickLocateButton.addEventListener("click", () => locateButton.click());
 panelToggle.addEventListener("click", () => {
   setPanelCollapsed(!panel.classList.contains("collapsed"));
 });
-trackButton.addEventListener("click", async () => {
+trackButton.addEventListener("click", () => {
   if (state.watchId !== null) {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
@@ -1141,7 +745,6 @@ trackButton.addEventListener("click", async () => {
     return;
   }
   if (!requireGeolocation()) return;
-  await enableCompass();
   state.followLocation = true;
   trackButton.classList.add("active");
   trackButton.textContent = "Остановить отслеживание";
@@ -1168,33 +771,15 @@ wakeLockButton.addEventListener("click", async () => {
       : "Браузер не разрешил постоянную подсветку экрана.";
   }
 });
-voiceGuidanceButton.addEventListener("click", () => {
-  if (!state.voiceSupported) {
-    updateVoiceButton("Голос не поддерживается");
-    status.textContent = "Этот браузер не поддерживает голосовые подсказки.";
-    return;
-  }
-  state.voiceEnabled = !state.voiceEnabled;
-  window.speechSynthesis.cancel();
-  resetVoiceProgress();
-  updateVoiceButton();
-  if (state.voiceEnabled) {
-    speak("Голосовые подсказки включены.", { interrupt: true });
-    status.textContent =
-      "Голосовые подсказки включены для текущего режима маршрута.";
-  } else {
-    status.textContent = "Голосовые подсказки выключены.";
-  }
-});
 undoPointButton.addEventListener("click", () => {
   const marker = state.customMarkers.pop();
   if (marker) marker.remove();
   state.customPoints.pop();
   if (state.route) {
     state.route.remove();
-    clearRouteGuidance();
-    clearRecoveryRoute();
+    if (state.routeAhead) state.routeAhead.remove();
     state.route = null;
+    state.routeAhead = null;
     state.routeLatLngs = [];
     state.routeDistances = [];
     hideNavigation();
@@ -1227,15 +812,8 @@ document.addEventListener("visibilitychange", () => {
 map.fitBounds(config.bounds, { padding: [30, 30] });
 customControls.hidden = !isCustomMode();
 updateCustomLabels();
-if (isMobile()) setPanelCollapsed(true);
+if (isMobile()) setPanelCollapsed(false);
 if (!("wakeLock" in navigator)) {
   wakeLockButton.classList.add("unsupported");
   updateWakeLockButton("Подсветка не поддерживается");
 }
-if (state.voiceSupported) {
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.addEventListener?.("voiceschanged", preferredVoice);
-} else {
-  voiceGuidanceButton.disabled = true;
-}
-updateVoiceButton();
