@@ -11,8 +11,9 @@
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v='1') }}">
   <link rel="icon" href="{{ url_for('static', filename='icon.svg', v='1') }}" type="image/svg+xml">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
+  <link rel="preconnect" href="https://server.arcgisonline.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='voice-sheet1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='panel-map-style1') }}">
 </head>
 <body>
   <main>
@@ -53,6 +54,14 @@
             <option value="experimental">Экспериментальный по тропам</option>
             <option value="custom_experimental">Кастомный через мои точки</option>
             <option value="walk">Пешком через дворы</option>
+          </select>
+        </label>
+
+        <label class="mode map-style-control">
+          Вид карты
+          <select id="map-style">
+            <option value="street" selected>Схема</option>
+            <option value="satellite">Спутник</option>
           </select>
         </label>
 
@@ -107,6 +116,6 @@
     };
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="{{ url_for('static', filename='app.js', v='voice-sheet1') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='panel-map-style1') }}"></script>
 </body>
 </html>

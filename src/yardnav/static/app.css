@@ -172,6 +172,10 @@ h1 {
   font: inherit;
 }
 
+.map-style-control {
+  margin-top: -10px;
+}
+
 .steps {
   display: grid;
   gap: 9px;
@@ -495,6 +499,10 @@ button:disabled {
 
   .mode {
     margin: 12px 0 10px;
+  }
+
+  .map-style-control {
+    margin-top: -4px;
   }
 
   .mode select {

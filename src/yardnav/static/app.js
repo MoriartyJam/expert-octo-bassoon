@@ -1,9 +1,21 @@
 const config = window.YARDNAV_CONFIG;
 const map = L.map("map").setView(config.center, 16);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+const streetLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 20,
   attribution: "&copy; OpenStreetMap contributors"
-}).addTo(map);
+});
+const satelliteLayer = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  {
+    maxZoom: 19,
+    attribution: "Tiles &copy; Esri"
+  }
+);
+streetLayer.addTo(map);
+const mapStyles = {
+  street: streetLayer,
+  satellite: satelliteLayer
+};
 
 const state = {
   start: null,
@@ -50,6 +62,7 @@ const panelToggleLabel = document.querySelector("#panel-toggle-label");
 const locateButton = document.querySelector("#locate");
 const quickLocateButton = document.querySelector("#quick-locate");
 const profileSelect = document.querySelector("#profile");
+const mapStyleSelect = document.querySelector("#map-style");
 const customControls = document.querySelector("#custom-controls");
 const customCount = document.querySelector("#custom-count");
 const undoPointButton = document.querySelector("#undo-point");
@@ -64,6 +77,35 @@ const followingManeuver = document.querySelector("#following-maneuver");
 
 function isMobile() {
   return window.matchMedia("(max-width: 720px)").matches;
+}
+
+function storedMapStyle() {
+  try {
+    return window.localStorage.getItem("yardnav-map-style");
+  } catch {
+    return null;
+  }
+}
+
+function rememberMapStyle(value) {
+  try {
+    window.localStorage.setItem("yardnav-map-style", value);
+  } catch {
+    // Ignore browsers that block localStorage in embedded views.
+  }
+}
+
+function setMapStyle(value, remember = true) {
+  const style = value === "satellite" ? "satellite" : "street";
+  for (const [name, layer] of Object.entries(mapStyles)) {
+    if (name === style) {
+      if (!map.hasLayer(layer)) layer.addTo(map);
+    } else if (map.hasLayer(layer)) {
+      map.removeLayer(layer);
+    }
+  }
+  mapStyleSelect.value = style;
+  if (remember) rememberMapStyle(style);
 }
 
 function setPanelCollapsed(collapsed) {
@@ -908,6 +950,12 @@ profileSelect.addEventListener("change", () => {
     ? "Поставьте старт, важные точки и финиш по порядку."
     : "Первый клик задает начало.";
 });
+mapStyleSelect.addEventListener("change", () => {
+  setMapStyle(mapStyleSelect.value);
+  status.textContent = mapStyleSelect.value === "satellite"
+    ? "Включён спутниковый вид карты."
+    : "Включена схема карты.";
+});
 window.addEventListener("resize", () => {
   if (!isMobile()) setPanelCollapsed(false);
   map.invalidateSize();
@@ -922,6 +970,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 map.fitBounds(config.bounds, { padding: [30, 30] });
+setMapStyle(storedMapStyle(), false);
 customControls.hidden = !isCustomMode();
 updateCustomLabels();
 if (isMobile()) setPanelCollapsed(true);
