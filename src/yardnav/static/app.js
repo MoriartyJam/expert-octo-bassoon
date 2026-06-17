@@ -21,9 +21,6 @@ const state = {
   filteredLocation: null,
   locationAccuracy: null,
   locationTimestamp: null,
-  locationHeading: null,
-  cameraTarget: null,
-  lastCameraMove: 0,
   routeAlong: null,
   followLocation: false,
   customPoints: [],
@@ -64,49 +61,9 @@ const maneuverIcon = document.querySelector("#maneuver-icon");
 const maneuverDistance = document.querySelector("#maneuver-distance");
 const maneuverInstruction = document.querySelector("#maneuver-instruction");
 const followingManeuver = document.querySelector("#following-maneuver");
-const mapElement = document.querySelector("#map");
 
 function isMobile() {
   return window.matchMedia("(max-width: 720px)").matches;
-}
-
-function initializeTelegramWebApp() {
-  const telegram = window.Telegram?.WebApp;
-  if (!telegram) return;
-  document.documentElement.classList.add("telegram-web-app");
-  telegram.ready();
-  telegram.expand();
-  telegram.enableClosingConfirmation?.();
-  telegram.disableVerticalSwipes?.();
-}
-
-function protectMapGestures() {
-  let touchStart = null;
-
-  mapElement.addEventListener("touchstart", event => {
-    if (event.touches.length !== 1) {
-      touchStart = null;
-      return;
-    }
-    const touch = event.touches[0];
-    touchStart = { x: touch.clientX, y: touch.clientY };
-  }, { capture: true, passive: true });
-
-  mapElement.addEventListener("touchmove", event => {
-    if (!touchStart || event.touches.length !== 1) return;
-    const touch = event.touches[0];
-    const horizontal = Math.abs(touch.clientX - touchStart.x);
-    const vertical = Math.abs(touch.clientY - touchStart.y);
-    if (horizontal > vertical && horizontal > 4 && event.cancelable) {
-      event.preventDefault();
-    }
-  }, { capture: true, passive: false });
-
-  const clearTouch = () => {
-    touchStart = null;
-  };
-  mapElement.addEventListener("touchend", clearTouch, { passive: true });
-  mapElement.addEventListener("touchcancel", clearTouch, { passive: true });
 }
 
 function setPanelCollapsed(collapsed) {
@@ -271,55 +228,6 @@ function bearing(start, end) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
-function locationIcon(headingValue) {
-  const heading = Number.isFinite(headingValue) ? headingValue : 0;
-  const directionClass = Number.isFinite(headingValue) ? " has-heading" : "";
-  return L.divIcon({
-    className: "user-location-marker",
-    html: `
-      <div class="location-puck${directionClass}">
-        <span class="location-direction" style="transform:rotate(${heading}deg)"></span>
-        <span class="location-dot"></span>
-      </div>
-    `,
-    iconSize: [42, 42],
-    iconAnchor: [21, 21],
-    tooltipAnchor: [0, -24]
-  });
-}
-
-function updateLocationIconHeading() {
-  const puck = state.locationMarker?.getElement()?.querySelector(
-    ".location-puck"
-  );
-  const direction = puck?.querySelector(".location-direction");
-  if (!puck || !direction) return;
-  const hasHeading = Number.isFinite(state.locationHeading);
-  puck.classList.toggle("has-heading", hasHeading);
-  direction.style.transform =
-    `rotate(${hasHeading ? state.locationHeading : 0}deg)`;
-}
-
-function updateLocationHeading(position, previousLatLng, fix) {
-  const sensorHeading = Number(position.coords.heading);
-  const speed = Number(position.coords.speed);
-  if (
-    Number.isFinite(sensorHeading)
-    && sensorHeading >= 0
-    && (!Number.isFinite(speed) || speed >= .8)
-  ) {
-    state.locationHeading = sensorHeading;
-    return;
-  }
-  if (
-    !fix.ignored
-    && previousLatLng
-    && map.distance(previousLatLng, fix.latlng) >= 4
-  ) {
-    state.locationHeading = bearing(previousLatLng, fix.latlng);
-  }
-}
-
 function routePointAt(distance) {
   if (!state.routeLatLngs.length) return null;
   if (state.routeLatLngs.length === 1) return state.routeLatLngs[0];
@@ -450,31 +358,19 @@ function hideNavigation() {
 function followRouteAhead(displayLatLng) {
   if (!state.followLocation) return;
   const along = state.routeAlong || 0;
-  const lookAhead = routePointAt(along + (isMobile() ? 120 : 90));
-  const center = lookAhead
-    ? L.latLng(
-      displayLatLng.lat + (lookAhead.lat - displayLatLng.lat) * .42,
-      displayLatLng.lng + (lookAhead.lng - displayLatLng.lng) * .42
-    )
-    : displayLatLng;
-  const now = Date.now();
-  const moved = state.cameraTarget
-    ? map.distance(state.cameraTarget, center)
-    : Infinity;
-  if (moved < 7 && now - state.lastCameraMove < 1400) return;
-
-  state.cameraTarget = center;
-  state.lastCameraMove = now;
-  const targetZoom = isMobile() ? 18 : 17;
-  if (map.getZoom() < targetZoom) {
-    map.setView(center, targetZoom, { animate: true });
+  const lookAhead = routePointAt(along + 90);
+  if (!lookAhead) {
+    map.panTo(displayLatLng);
+    return;
+  }
+  const center = L.latLng(
+    displayLatLng.lat + (lookAhead.lat - displayLatLng.lat) * .55,
+    displayLatLng.lng + (lookAhead.lng - displayLatLng.lng) * .55
+  );
+  if (map.getZoom() < 17) {
+    map.setView(center, 17, { animate: true });
   } else {
-    map.panTo(center, {
-      animate: true,
-      duration: .55,
-      easeLinearity: .35,
-      noMoveStart: true
-    });
+    map.panTo(center);
   }
 }
 
@@ -639,8 +535,6 @@ function updateProgress(latlng) {
 
 function updateLocation(position, centerMap = false) {
   const fix = filteredPosition(position);
-  const previousLatLng = state.filteredLocation;
-  updateLocationHeading(position, previousLatLng, fix);
   state.filteredLocation = fix.latlng;
   state.locationAccuracy = fix.accuracy;
   state.locationTimestamp = fix.timestamp;
@@ -657,10 +551,12 @@ function updateLocation(position, centerMap = false) {
   const accuracy = Math.round(fix.accuracy);
 
   if (!state.locationMarker) {
-    state.locationMarker = L.marker(displayLatLng, {
-      icon: locationIcon(state.locationHeading),
-      keyboard: false,
-      zIndexOffset: 1000
+    state.locationMarker = L.circleMarker(displayLatLng, {
+      radius: 8,
+      color: "#fff",
+      weight: 3,
+      fillColor: "#1769aa",
+      fillOpacity: 1
     }).addTo(map).bindTooltip("Вы здесь");
     state.accuracyCircle = L.circle(fix.latlng, {
       radius: fix.accuracy,
@@ -671,7 +567,6 @@ function updateLocation(position, centerMap = false) {
     }).addTo(map);
   } else {
     state.locationMarker.setLatLng(displayLatLng);
-    updateLocationIconHeading();
     state.accuracyCircle.setLatLng(fix.latlng).setRadius(fix.accuracy);
   }
 
@@ -684,9 +579,7 @@ function updateLocation(position, centerMap = false) {
     `Точность геолокации: ±${accuracy} м${snapLabel}${filterLabel}`;
   updateProgress(fix.latlng);
   if (centerMap) {
-    map.setView(displayLatLng, Math.max(map.getZoom(), isMobile() ? 18 : 17), {
-      animate: true
-    });
+    map.panTo(displayLatLng);
   } else {
     followRouteAhead(displayLatLng);
   }
@@ -886,8 +779,6 @@ function reset() {
   state.routeAhead = null;
   state.routeLatLngs = [];
   state.routeDistances = [];
-  state.cameraTarget = null;
-  state.lastCameraMove = 0;
   hideNavigation();
   state.customMarkers.forEach(marker => marker.remove());
   state.customPoints = [];
@@ -942,9 +833,6 @@ trackButton.addEventListener("click", () => {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
     state.followLocation = false;
-    state.cameraTarget = null;
-    state.lastCameraMove = 0;
-    map.getContainer().classList.remove("navigation-following");
     trackButton.classList.remove("active");
     trackButton.textContent = "Отслеживать";
     status.textContent = "Отслеживание остановлено.";
@@ -953,15 +841,10 @@ trackButton.addEventListener("click", () => {
   }
   if (!requireGeolocation()) return;
   state.followLocation = true;
-  state.cameraTarget = null;
-  state.lastCameraMove = 0;
-  map.getContainer().classList.add("navigation-following");
-  if (isMobile()) setPanelCollapsed(true);
   trackButton.classList.add("active");
   trackButton.textContent = "Остановить отслеживание";
   status.textContent = "Отслеживание местоположения включено.";
   requestWakeLock();
-  if (state.currentLocation) followRouteAhead(state.currentLocation);
   state.watchId = navigator.geolocation.watchPosition(
     position => updateLocation(position),
     locationError,
@@ -1039,8 +922,6 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 map.fitBounds(config.bounds, { padding: [30, 30] });
-initializeTelegramWebApp();
-protectMapGestures();
 customControls.hidden = !isCustomMode();
 updateCustomLabels();
 if (isMobile()) setPanelCollapsed(true);
