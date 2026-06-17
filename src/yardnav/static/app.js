@@ -25,6 +25,7 @@ const state = {
   routeAhead: null,
   routeLatLngs: [],
   routeDistances: [],
+  routeTargets: [],
   maneuvers: [],
   watchId: null,
   locationMarker: null,
@@ -48,7 +49,10 @@ const state = {
   spokenApproach: null,
   spokenNow: null,
   spokenArrival: false,
-  spokenOffRoute: false
+  spokenOffRoute: false,
+  autoRerouting: false,
+  lastAutoRerouteAt: 0,
+  lastAutoRerouteFrom: null
 };
 const status = document.querySelector("#status");
 const summary = document.querySelector("#summary");
@@ -448,6 +452,13 @@ function updateRouteAhead(position) {
   if (state.locationMarker) state.locationMarker.bringToFront();
 }
 
+function routePayloadPoint(latlng) {
+  return {
+    lat: latlng.lat,
+    lon: latlng.lng
+  };
+}
+
 function routePosition(latlng) {
   if (state.routeLatLngs.length < 2) return null;
   const point = project(latlng);
@@ -480,6 +491,49 @@ function routePosition(latlng) {
     }
   }
   return best;
+}
+
+function remainingCustomTargets(position) {
+  if (!state.routeTargets.length) return [];
+  const remaining = state.routeTargets.filter(target => {
+    const targetPosition = routePosition(target);
+    return !targetPosition || targetPosition.along >= position.along + 25;
+  });
+  if (remaining.length) return remaining;
+  return [state.routeTargets[state.routeTargets.length - 1]];
+}
+
+async function requestAutoReroute(position, currentLatLng) {
+  if (!state.followLocation || state.autoRerouting || !state.route) return;
+  const now = Date.now();
+  if (now - state.lastAutoRerouteAt < 20000) return;
+  if (
+    state.lastAutoRerouteFrom
+    && map.distance(state.lastAutoRerouteFrom, currentLatLng) < 35
+  ) {
+    return;
+  }
+
+  const targets = isCustomMode()
+    ? remainingCustomTargets(position)
+    : (state.goal ? [state.goal] : []);
+  if (!targets.length) return;
+
+  state.autoRerouting = true;
+  state.lastAutoRerouteAt = now;
+  state.lastAutoRerouteFrom = currentLatLng;
+  status.textContent =
+    "Вы вне маршрута. Перестраиваю путь от текущего места...";
+
+  try {
+    await requestRoute({
+      auto: true,
+      start: currentLatLng,
+      targets
+    });
+  } finally {
+    state.autoRerouting = false;
+  }
 }
 
 function filteredPosition(position) {
@@ -566,9 +620,12 @@ function updateProgress(latlng) {
     status.textContent = "Вы отклонились от маршрута больше чем на 80 м.";
     navigationBanner.classList.add("off-route");
     maneuverDistance.textContent = "Маршрут потерян";
-    maneuverInstruction.textContent = "Вернитесь к линии маршрута";
+    maneuverInstruction.textContent = state.autoRerouting
+      ? "Перестраиваю маршрут"
+      : "Вернитесь к линии маршрута";
     followingManeuver.textContent =
       `Отклонение ${formatDistance(position.offRoute)}`;
+    requestAutoReroute(position, latlng);
   } else {
     if (position.offRoute < 50) state.spokenOffRoute = false;
     navigationBanner.classList.remove("off-route");
@@ -713,26 +770,33 @@ function addCustomPoint(latlng) {
     : `Точка ${number} добавлена. Нажмите «Построить», когда последняя точка будет финишем.`;
 }
 
-async function requestRoute() {
-  if (isCustomMode() && state.customPoints.length < 2) {
+async function requestRoute(options = {}) {
+  const auto = Boolean(options.auto);
+  if (!auto && isCustomMode() && state.customPoints.length < 2) {
     status.textContent = "Добавьте минимум старт и финиш.";
     return;
   }
-  status.textContent = "Строю маршрут...";
+  status.textContent = auto
+    ? "Перестраиваю маршрут от текущей позиции..."
+    : "Строю маршрут...";
   try {
-    const endpoint = isCustomMode() ? "/api/custom-route" : "/api/route";
-    const payload = isCustomMode()
+    const custom = isCustomMode();
+    const endpoint = custom ? "/api/custom-route" : "/api/route";
+    const start = options.start || state.start;
+    const targets = options.targets || (
+      custom
+        ? state.customPoints.slice(1)
+        : [state.goal]
+    );
+    const payload = custom
       ? {
-          points: state.customPoints.map(point => ({
-            lat: point.lat,
-            lon: point.lng
-          }))
+          points: [start, ...targets].map(routePayloadPoint)
         }
       : {
-          start_lat: state.start.lat,
-          start_lon: state.start.lng,
-          goal_lat: state.goal.lat,
-          goal_lon: state.goal.lng,
+          start_lat: start.lat,
+          start_lon: start.lng,
+          goal_lat: targets[0].lat,
+          goal_lon: targets[0].lng,
           profile: profileSelect.value
         };
     const response = await fetch(endpoint, {
@@ -748,6 +812,7 @@ async function requestRoute() {
     state.route = null;
     state.routeAhead = null;
     state.routeAlong = 0;
+    state.routeTargets = targets;
 
     const routeColor = ["experimental", "custom_experimental"].includes(
       data.properties.profile
@@ -779,7 +844,7 @@ async function requestRoute() {
         segmentIndex: 0
       });
     }
-    map.fitBounds(state.route.getBounds(), { padding: [45, 45] });
+    if (!auto) map.fitBounds(state.route.getBounds(), { padding: [45, 45] });
     if (isMobile()) setPanelCollapsed(true);
     summary.hidden = false;
     summary.innerHTML =
@@ -793,20 +858,28 @@ async function requestRoute() {
       ` · Бордюры: ${data.properties.kerb_edges}` +
       ` · Барьеры: ${data.properties.barrier_edges}</small>`;
     if (data.properties.profile === "custom_experimental") {
-      status.textContent =
-        `Кастомный маршрут построен через ${data.properties.via_count} обязательных точек.`;
+      status.textContent = auto
+        ? "Маршрут перестроен через оставшиеся обязательные точки."
+        : `Кастомный маршрут построен через ${data.properties.via_count} обязательных точек.`;
     } else if (data.properties.profile === "experimental") {
-      status.textContent =
-        "Экспериментальный маршрут построен по тропам и дворовым проходам; скорость не оптимизируется.";
+      status.textContent = auto
+        ? "Экспериментальный маршрут перестроен от текущего места."
+        : "Экспериментальный маршрут построен по тропам и дворовым проходам; скорость не оптимизируется.";
     } else if (data.properties.profile === "mtb") {
-      status.textContent = data.properties.meets_speed_target
+      status.textContent = auto
+        ? "MTB-маршрут перестроен от текущего места."
+        : data.properties.meets_speed_target
         ? "MTB-маршрут без непроезжаемых лестниц; цель 10 км/ч достигнута."
         : "Лестниц нет, но по данным OSM цель 10 км/ч здесь не достигается.";
     } else {
-      status.textContent = "Пеший маршрут построен с учетом дворового профиля.";
+      status.textContent = auto
+        ? "Пеший маршрут перестроен от текущего места."
+        : "Пеший маршрут построен с учетом дворового профиля.";
     }
   } catch (error) {
-    status.textContent = error.message;
+    status.textContent = auto
+      ? `Не удалось перестроить маршрут: ${error.message}`
+      : error.message;
   }
 }
 
@@ -821,6 +894,10 @@ function reset() {
   state.routeAhead = null;
   state.routeLatLngs = [];
   state.routeDistances = [];
+  state.routeTargets = [];
+  state.autoRerouting = false;
+  state.lastAutoRerouteAt = 0;
+  state.lastAutoRerouteFrom = null;
   hideNavigation();
   state.customMarkers.forEach(marker => marker.remove());
   state.customPoints = [];
